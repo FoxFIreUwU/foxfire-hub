@@ -20,12 +20,12 @@ export const APP_STAGE_LABEL = "ALPHA";
 
 // Ссылка на "живой" список виджетов (registry.json). Замени на raw-ссылку
 // своего репозитория, когда он будет готов — см. HOW_TO_PUBLISH_REGISTRY.md.
-export const REGISTRY_URL = "https://raw.githubusercontent.com/YOUR_USER/YOUR_REGISTRY_REPO/main/registry.json";
+export const REGISTRY_URL = "https://raw.githubusercontent.com/FoxFIreUwU/foxfire-hub-widgets/refs/heads/main/registry.json";
 
 // Ссылка на файл с информацией о последней версии САМОГО ПРИЛОЖЕНИЯ (не виджетов).
 // Формат файла и как его выложить на GitHub — см. app-version.example.json
 // в корне проекта и HOW_TO_PUBLISH_REGISTRY.md.
-export const APP_UPDATE_URL = "https://raw.githubusercontent.com/FoxFIreUwU/foxfire-hub/refs/heads/main/app-version.example.json";
+export const APP_UPDATE_URL = "https://raw.githubusercontent.com/FoxFIreUwU/foxfire-hub/refs/heads/main/app-version.json";
 
 // Как часто автоматически проверять обновления приложения, пока оно открыто
 // (в миллисекундах). Проверка также всегда происходит один раз сразу при запуске.
