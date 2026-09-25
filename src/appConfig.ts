@@ -25,7 +25,7 @@ export const REGISTRY_URL = "https://raw.githubusercontent.com/YOUR_USER/YOUR_RE
 // Ссылка на файл с информацией о последней версии САМОГО ПРИЛОЖЕНИЯ (не виджетов).
 // Формат файла и как его выложить на GitHub — см. app-version.example.json
 // в корне проекта и HOW_TO_PUBLISH_REGISTRY.md.
-export const APP_UPDATE_URL = "https://raw.githubusercontent.com/YOUR_USER/YOUR_APP_REPO/main/app-version.json";
+export const APP_UPDATE_URL = "https://raw.githubusercontent.com/FoxFIreUwU/foxfire-hub/refs/heads/main/app-version.example.json";
 
 // Как часто автоматически проверять обновления приложения, пока оно открыто
 // (в миллисекундах). Проверка также всегда происходит один раз сразу при запуске.
