@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { X, Star, Download, RefreshCw, Play, ChevronDown, ChevronUp, AlertTriangle, Ban, ImageOff, ShieldAlert } from "lucide-react";
+import { X, Star, Download, RefreshCw, Play, ChevronDown, ChevronUp, AlertTriangle, Ban, ImageOff, ShieldAlert, Trash2, Check } from "lucide-react";
 import { open as openExternalLink } from "@tauri-apps/api/shell";
 import { WidgetVersion, WidgetWithState, WidgetConfigValues } from "../types/widget";
 import { sortVersionsDesc, getDefaultVersion } from "../utils/versions";
@@ -13,6 +13,7 @@ interface WidgetModalProps {
   onConfigChange: (key: string, value: string | number | boolean) => void;
   onClose: () => void;
   onAction: (widget: WidgetWithState, version: WidgetVersion) => void;
+  onUninstall: (widgetId: string, keepConfig: boolean) => void;
 }
 
 export default function WidgetModal({
@@ -21,8 +22,12 @@ export default function WidgetModal({
   configValues,
   onConfigChange,
   onClose,
-  onAction
+  onAction,
+  onUninstall
 }: WidgetModalProps) {
+  // Показываем выбор "удалить с сохранением настроек / полностью" только после
+  // клика на "Удалить виджет" — так случайное нажатие ничего не сломает.
+  const [confirmingUninstall, setConfirmingUninstall] = useState(false);
   const schema = widget.configSchema ?? {};
   const hasSettings = Object.keys(schema).length > 0;
   const sortedVersions = sortVersionsDesc(widget.versions);
@@ -298,6 +303,61 @@ export default function WidgetModal({
             {renderActionIcon()}
             {actionButtonLabel()}
           </button>
+
+          {/* Удаление виджета (Задание: реальное удаление, с сохранением
+              настроек или без) — доступно только для реально установленных виджетов. */}
+          {(widget.status === "installed" || widget.status === "update-available") && (
+            <div className="mt-3">
+              {!confirmingUninstall ? (
+                <button
+                  type="button"
+                  onClick={() => setConfirmingUninstall(true)}
+                  className="flex items-center gap-1.5 text-xs font-semibold text-accent-danger hover:underline"
+                >
+                  <Trash2 size={14} />
+                  Удалить виджет
+                </button>
+              ) : (
+                <div className="rounded-xl border border-accent-danger/30 bg-accent-danger/10 p-3">
+                  <p className="mb-2 text-xs text-warmwhite/85">
+                    Удалить «{widget.name}» с этого компьютера? Файлы будут стёрты в любом случае —
+                    выбери, сохранить ли настройки виджета для следующей установки.
+                  </p>
+                  <div className="flex flex-wrap gap-2">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        onUninstall(widget.id, true);
+                        setConfirmingUninstall(false);
+                      }}
+                      className="flex items-center gap-1.5 rounded-lg bg-accent-fire px-3 py-1.5 text-xs font-semibold text-white hover:bg-accent-firedark"
+                    >
+                      <Check size={14} />
+                      Удалить, сохранить настройки
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        onUninstall(widget.id, false);
+                        setConfirmingUninstall(false);
+                      }}
+                      className="flex items-center gap-1.5 rounded-lg border border-accent-danger/40 px-3 py-1.5 text-xs font-semibold text-accent-danger hover:bg-accent-danger/10"
+                    >
+                      <Trash2 size={14} />
+                      Удалить полностью
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setConfirmingUninstall(false)}
+                      className="rounded-lg border border-border px-3 py-1.5 text-xs font-semibold text-warmwhite/80 hover:text-warmwhite"
+                    >
+                      Отмена
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
         </div>
       </div>
 

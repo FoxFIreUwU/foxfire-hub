@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { FolderOpen, Download, Upload, Check, AlertTriangle, SlidersHorizontal, Sparkles } from "lucide-react";
 import { open as openDialog, save as saveDialog } from "@tauri-apps/api/dialog";
 import { readTextFile, writeTextFile } from "@tauri-apps/api/fs";
@@ -6,10 +6,10 @@ import { WidgetWithState, WidgetConfigValues, FoxFireProfile } from "../types/wi
 import AppearanceSettings from "./AppearanceSettings";
 import { APP_VERSION, APP_STAGE_LABEL } from "../appConfig";
 
-// Ключ, под которым путь установки хранится в localStorage.
-// Это временное хранилище — в реальном приложении путь будет частью постоянных
-// настроек, но для MVP localStorage достаточно, он переживает перезапуск приложения.
-const INSTALL_PATH_STORAGE_KEY = "foxfire-install-path";
+// Путь установки, экспорт/импорт профиля и список установленных виджетов теперь
+// хранятся не здесь, а в общем локальном состоянии приложения (foxfire-state.json,
+// см. src/utils/localState.ts и SYSTEM_RULES.md, раздел 8) — этот компонент только
+// показывает их и просит App.tsx изменить состояние.
 const DEFAULT_INSTALL_PATH_LABEL = "Стандартная папка приложения";
 
 type SettingsTab = "general" | "appearance";
@@ -22,13 +22,15 @@ const TABS: { id: SettingsTab; label: string; icon: typeof SlidersHorizontal }[]
 interface SettingsProps {
   widgets: WidgetWithState[];
   configByWidget: Record<string, WidgetConfigValues>;
+  installPath: string | null;
+  onInstallPathChange: (path: string | null) => void;
   onApplyImport: (profile: FoxFireProfile) => void;
 }
 
 // Обёртка с боковым меню в стиле референса ("Основное" / "Внешний вид" слева,
 // содержимое раздела справа). Сама логика пути установки и экспорта/импорта —
 // в GeneralSettings ниже, логика внешнего вида — в AppearanceSettings.tsx.
-export default function Settings({ widgets, configByWidget, onApplyImport }: SettingsProps) {
+export default function Settings({ widgets, configByWidget, installPath, onInstallPathChange, onApplyImport }: SettingsProps) {
   const [activeTab, setActiveTab] = useState<SettingsTab>("general");
 
   return (
@@ -57,7 +59,13 @@ export default function Settings({ widgets, configByWidget, onApplyImport }: Set
 
       <div className="min-w-0 flex-1">
         {activeTab === "general" && (
-          <GeneralSettings widgets={widgets} configByWidget={configByWidget} onApplyImport={onApplyImport} />
+          <GeneralSettings
+            widgets={widgets}
+            configByWidget={configByWidget}
+            installPath={installPath}
+            onInstallPathChange={onInstallPathChange}
+            onApplyImport={onApplyImport}
+          />
         )}
         {activeTab === "appearance" && <AppearanceSettings />}
       </div>
@@ -65,40 +73,18 @@ export default function Settings({ widgets, configByWidget, onApplyImport }: Set
   );
 }
 
-function GeneralSettings({ widgets, configByWidget, onApplyImport }: SettingsProps) {
-  // Путь установки. null означает "используется путь по умолчанию".
-  const [installPath, setInstallPath] = useState<string | null>(() => {
-    try {
-      return localStorage.getItem(INSTALL_PATH_STORAGE_KEY);
-    } catch {
-      return null;
-    }
-  });
-
+function GeneralSettings({ widgets, configByWidget, installPath, onInstallPathChange, onApplyImport }: SettingsProps) {
   const [exportMessage, setExportMessage] = useState<string | null>(null);
   const [importError, setImportError] = useState<string | null>(null);
   // Профиль, который прочитан из файла, но ещё не применён — ждёт подтверждения пользователя.
   const [pendingProfile, setPendingProfile] = useState<FoxFireProfile | null>(null);
-
-  // Сохраняем путь в localStorage при каждом изменении — так он переживёт перезапуск приложения.
-  useEffect(() => {
-    try {
-      if (installPath) {
-        localStorage.setItem(INSTALL_PATH_STORAGE_KEY, installPath);
-      } else {
-        localStorage.removeItem(INSTALL_PATH_STORAGE_KEY);
-      }
-    } catch {
-      // localStorage недоступен (например, приватный режим браузера) — просто не сохраняем.
-    }
-  }, [installPath]);
 
   // Открывает системный диалог выбора папки (Tauri dialog plugin).
   async function handleChoosePath() {
     try {
       const selected = await openDialog({ directory: true, multiple: false });
       if (typeof selected === "string") {
-        setInstallPath(selected);
+        onInstallPathChange(selected);
       }
     } catch {
       // Пользователь закрыл диалог, либо приложение сейчас открыто не в Tauri
@@ -190,7 +176,7 @@ function GeneralSettings({ widgets, configByWidget, onApplyImport }: SettingsPro
   // заглушена и просто обновляет состояние приложения (полноценная установка появится позже).
   function confirmImport() {
     if (!pendingProfile) return;
-    setInstallPath(pendingProfile.installPath);
+    onInstallPathChange(pendingProfile.installPath);
     onApplyImport(pendingProfile);
     setPendingProfile(null);
   }

@@ -72,7 +72,40 @@ export interface WidgetWithState extends WidgetManifest {
 export type WidgetConfigValues = Record<string, string | number | boolean>;
 
 // Категории нижней навигации
-export type NavSection = "mods" | "overview" | "games" | "settings";
+export type NavSection = "mods" | "overview" | "games" | "downloaded" | "settings";
+
+// Статус загрузки каталога виджетов (registry.json) — используется, чтобы
+// показать анимацию загрузки или ошибку вместо старых тестовых виджетов-заглушек.
+// См. SYSTEM_RULES.md, раздел 8.
+export type RegistryStatus = "loading" | "ready" | "error";
+
+// Один реально установленный на компьютере виджет — какая версия стоит и куда
+// физически распакованы его файлы (см. SYSTEM_RULES.md, раздел 8).
+export interface InstalledWidgetEntry {
+  id: string;
+  installedVersion: string;
+  installDir: string;
+}
+
+// Сохранённые настройки виджета вместе со снимком его манифеста на момент
+// установки — манифест нужен, чтобы карточку виджета можно было показать во
+// вкладке "Загруженное" и в самом файле локального состояния, даже если
+// registry.json прямо сейчас недоступен или виджет из него убрали.
+export interface SavedWidgetConfig {
+  manifest: WidgetManifest;
+  config: WidgetConfigValues;
+}
+
+// Файл foxfire-state.json (папка данных приложения) — постоянное локальное
+// состояние: что реально скачано, куда, и какие у виджетов настройки.
+// НЕ путать с foxfirehub-profile.json (Задание 5) — тот пользователь создаёт
+// вручную для переноса на другой компьютер, а этот пишется автоматически при
+// каждой установке/удалении/изменении настроек. Подробности — SYSTEM_RULES.md, раздел 8.
+export interface LocalState {
+  installPath: string | null; // null = стандартная папка приложения
+  installed: InstalledWidgetEntry[];
+  configs: Record<string, SavedWidgetConfig>;
+}
 
 // Один установленный виджет внутри файла экспорта настроек (Задание 5).
 // Формат описан в SYSTEM_WIDGET_STYLE.md, раздел 8.

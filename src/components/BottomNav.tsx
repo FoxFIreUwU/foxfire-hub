@@ -1,4 +1,4 @@
-import { LayoutGrid, Compass, Gamepad2, Sliders } from "lucide-react";
+import { LayoutGrid, Compass, Gamepad2, HardDrive, Sliders } from "lucide-react";
 import { NavSection } from "../types/widget";
 
 interface BottomNavProps {
@@ -10,6 +10,7 @@ const NAV_ITEMS: { id: NavSection; label: string; icon: typeof LayoutGrid }[] = 
   { id: "mods", label: "Моды", icon: LayoutGrid },
   { id: "overview", label: "Обзор", icon: Compass },
   { id: "games", label: "Игры", icon: Gamepad2 },
+  { id: "downloaded", label: "Загруженное", icon: HardDrive },
   { id: "settings", label: "Настройки", icon: Sliders }
 ];
 
