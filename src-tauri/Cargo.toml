@@ -1,0 +1,17 @@
+[package]
+name = "foxfire-hub"
+version = "0.1.0-alpha.1"
+description = "FoxFire Hub — маркет помогалок и виджетов для стримеров"
+authors = ["you"]
+edition = "2021"
+
+[build-dependencies]
+tauri-build = { version = "1", features = [] }
+
+[dependencies]
+tauri = { version = "1", features = ["shell-open", "dialog-open", "dialog-save", "fs-read-file", "fs-write-file", "window-close", "window-minimize", "window-set-fullscreen", "window-set-size", "window-start-dragging", "protocol-asset"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+[features]
+custom-protocol = ["tauri/custom-protocol"]

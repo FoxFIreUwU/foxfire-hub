@@ -1,0 +1,60 @@
+name: Release FoxFire Hub
+
+# Что делает этот файл: как только ты создаёшь на GitHub новый тег вида
+# "v0.1.0" или "v0.1.0-alpha.1" (Настройки -> Releases -> Draft a new release,
+# или командой `git tag v0.1.0 && git push origin v0.1.0`), GitHub сам:
+#  1. Соберёт FoxFire Hub на трёх системах — Windows, macOS, Linux;
+#  2. Создаст черновик релиза и прикрепит к нему готовые установщики
+#     (.exe/.msi для Windows, .dmg/.app для macOS, .deb/.AppImage для Linux).
+# Тебе останется только открыть вкладку Releases на GitHub, проверить черновик
+# и нажать "Publish release". Пересобирать вручную на трёх компьютерах не нужно.
+
+on:
+  push:
+    tags:
+      - "v*.*.*"
+  workflow_dispatch:
+
+jobs:
+  release:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: "windows-latest"
+          - platform: "macos-latest"
+          - platform: "ubuntu-22.04"
+
+    runs-on: ${{ matrix.platform }}
+
+    steps:
+      - name: Скачать код репозитория
+        uses: actions/checkout@v4
+
+      - name: Установить Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 18
+
+      - name: Установить Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Системные зависимости Linux (только для Ubuntu)
+        if: matrix.platform == 'ubuntu-22.04'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libgtk-3-dev libwebkit2gtk-4.0-dev libappindicator3-dev librsvg2-dev patchelf
+
+      - name: Установить npm-зависимости
+        run: npm install
+
+      - name: Собрать и опубликовать релиз
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tagName: ${{ github.ref_name }}
+          releaseName: "FoxFire Hub ${{ github.ref_name }}"
+          releaseBody: "Автоматическая сборка. Полный список изменений — в CHANGELOG.md."
+          releaseDraft: true
+          prerelease: false
