@@ -13,6 +13,7 @@ import { checkForAppUpdate } from "./utils/appUpdate";
 import { checkWidgetCompatibility } from "./utils/compatibility";
 import { loadLocalState, saveLocalState, resolveWidgetInstallDir } from "./utils/localState";
 import { downloadAndExtractWidget, removeWidgetDir } from "./utils/widgetInstall";
+import { launchInstalledWidget, copyWidgetObsLink } from "./utils/widgetLaunch";
 import { REGISTRY_URL, APP_UPDATE_CHECK_INTERVAL_MS, APP_VERSION } from "./appConfig";
 import {
   NavSection,
@@ -167,6 +168,32 @@ export default function App() {
     setActiveTags((prev) => (prev.includes(tag) ? prev.filter((t) => t !== tag) : [...prev, tag]));
   }
 
+  // Реально открывает установленный виджет в отдельном окне FoxFire Hub
+  // (кнопка "Запустить"). Настройки виджета берутся из foxfire-state.json и
+  // передаются через query-параметры URL — см. src/utils/widgetLaunch.ts.
+  async function handleLaunch(widget: WidgetWithState) {
+    const entry = localState.installed.find((e) => e.id === widget.id);
+    if (!entry) return;
+
+    setActionError(null);
+    try {
+      const config = configByWidget[widget.id] ?? {};
+      await launchInstalledWidget(entry, widget, config);
+    } catch (error) {
+      setActionError(`Не удалось запустить «${widget.name}»: ${String(error)}`);
+    }
+  }
+
+  // Копирует в буфер обмена file:// ссылку на index.html установленного
+  // виджета — вставляется прямо в OBS, в источник "Браузер". Ошибку бросает
+  // наружу, чтобы модалка виджета могла показать её рядом с кнопкой.
+  async function handleCopyObsLink(widget: WidgetWithState): Promise<void> {
+    const entry = localState.installed.find((e) => e.id === widget.id);
+    if (!entry) throw new Error("Виджет сейчас не установлен.");
+    const config = configByWidget[widget.id] ?? {};
+    await copyWidgetObsLink(entry, widget, config);
+  }
+
   // Реально скачивает и распаковывает выбранную версию виджета (Задание:
   // реальная загрузка виджетов). Если у виджета уже есть сохранённые настройки
   // от предыдущей установки (пользователь удалял его с опцией "сохранить
@@ -174,7 +201,10 @@ export default function App() {
   async function handleInstall(widget: WidgetWithState, version: WidgetVersion) {
     const alreadyThisVersion =
       widget.status === "installed" && widget.installedVersion === version.version;
-    if (alreadyThisVersion) return; // "Запустить" уже установленный виджет — пока заглушка, см. README
+    if (alreadyThisVersion) {
+      await handleLaunch(widget); // "Запустить" уже установленный виджет — реальный запуск
+      return;
+    }
     if (version.status === "unavailable") return;
 
     const compatibility = checkWidgetCompatibility(widget, version, APP_VERSION);
@@ -413,6 +443,7 @@ export default function App() {
           onClose={() => setSelectedWidgetId(null)}
           onAction={handleInstall}
           onUninstall={handleUninstall}
+          onCopyObsLink={handleCopyObsLink}
         />
       )}
     </div>

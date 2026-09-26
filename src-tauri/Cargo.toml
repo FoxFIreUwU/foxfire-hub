@@ -1,6 +1,6 @@
 [package]
 name = "foxfire-hub"
-version = "0.1.4"
+version = "0.1.5"
 description = "FoxFire Hub — маркет помогалок и виджетов для стримеров"
 authors = ["you"]
 edition = "2021"
@@ -9,7 +9,7 @@ edition = "2021"
 tauri-build = { version = "1", features = [] }
 
 [dependencies]
-tauri = { version = "1", features = ["shell-open", "dialog-open", "dialog-save", "fs-read-file", "fs-write-file", "window-close", "window-minimize", "window-set-fullscreen", "window-set-size", "window-start-dragging", "protocol-asset"] }
+tauri = { version = "1", features = ["shell-open", "dialog-open", "dialog-save", "fs-read-file", "fs-write-file", "window-close", "window-minimize", "window-set-fullscreen", "window-set-size", "window-start-dragging", "window-create", "protocol-asset", "clipboard-write-text"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 # Реальное скачивание файлов виджетов с GitHub (Задание: реальная загрузка).

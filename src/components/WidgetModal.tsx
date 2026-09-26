@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { X, Star, Download, RefreshCw, Play, ChevronDown, ChevronUp, AlertTriangle, Ban, ImageOff, ShieldAlert, Trash2, Check } from "lucide-react";
+import { X, Star, Download, RefreshCw, Play, ChevronDown, ChevronUp, AlertTriangle, Ban, ImageOff, ShieldAlert, Trash2, Check, Copy } from "lucide-react";
 import { open as openExternalLink } from "@tauri-apps/api/shell";
 import { WidgetVersion, WidgetWithState, WidgetConfigValues } from "../types/widget";
 import { sortVersionsDesc, getDefaultVersion } from "../utils/versions";
@@ -14,6 +14,7 @@ interface WidgetModalProps {
   onClose: () => void;
   onAction: (widget: WidgetWithState, version: WidgetVersion) => void;
   onUninstall: (widgetId: string, keepConfig: boolean) => void;
+  onCopyObsLink: (widget: WidgetWithState) => Promise<void>;
 }
 
 export default function WidgetModal({
@@ -23,11 +24,28 @@ export default function WidgetModal({
   onConfigChange,
   onClose,
   onAction,
-  onUninstall
+  onUninstall,
+  onCopyObsLink
 }: WidgetModalProps) {
   // Показываем выбор "удалить с сохранением настроек / полностью" только после
   // клика на "Удалить виджет" — так случайное нажатие ничего не сломает.
   const [confirmingUninstall, setConfirmingUninstall] = useState(false);
+  // Обратная связь на кнопке "Скопировать ссылку для OBS" — временно меняем
+  // подпись на "Скопировано!" или показываем ошибку, если файлов виджета нет на месте.
+  const [obsLinkState, setObsLinkState] = useState<"idle" | "copied" | "error">("idle");
+  const [obsLinkError, setObsLinkError] = useState<string | null>(null);
+
+  async function handleCopyObsLink() {
+    try {
+      await onCopyObsLink(widget);
+      setObsLinkError(null);
+      setObsLinkState("copied");
+      setTimeout(() => setObsLinkState("idle"), 2000);
+    } catch (error) {
+      setObsLinkState("error");
+      setObsLinkError(String(error));
+    }
+  }
   const schema = widget.configSchema ?? {};
   const hasSettings = Object.keys(schema).length > 0;
   const sortedVersions = sortVersionsDesc(widget.versions);
@@ -303,6 +321,24 @@ export default function WidgetModal({
             {renderActionIcon()}
             {actionButtonLabel()}
           </button>
+
+          {/* Ссылка на index.html виджета для источника "Браузер" в OBS —
+              доступна только для реально установленного виджета (Задание 1). */}
+          {widget.status === "installed" && (
+            <div className="mt-2">
+              <button
+                type="button"
+                onClick={handleCopyObsLink}
+                className="flex w-full items-center justify-center gap-2 rounded-xl border border-border px-3 py-2 text-xs font-semibold text-warmwhite/80 transition-colors hover:border-accent-fire/50 hover:text-accent-fire"
+              >
+                {obsLinkState === "copied" ? <Check size={14} /> : <Copy size={14} />}
+                {obsLinkState === "copied" ? "Ссылка скопирована!" : "Скопировать ссылку для OBS"}
+              </button>
+              {obsLinkState === "error" && obsLinkError && (
+                <p className="mt-1.5 text-[11px] text-accent-danger">{obsLinkError}</p>
+              )}
+            </div>
+          )}
 
           {/* Удаление виджета (Задание: реальное удаление, с сохранением
               настроек или без) — доступно только для реально установленных виджетов. */}

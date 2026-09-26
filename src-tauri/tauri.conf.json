@@ -7,13 +7,18 @@
   },
   "package": {
     "productName": "FoxFire Hub",
-    "version": "0.1.4"
+    "version": "0.1.5"
   },
   "tauri": {
     "allowlist": {
       "all": false,
-      "shell": { "open": true },
-      "dialog": { "open": true, "save": true },
+      "shell": {
+        "open": true
+      },
+      "dialog": {
+        "open": true,
+        "save": true
+      },
       "fs": {
         "readFile": true,
         "writeFile": true,
@@ -22,7 +27,9 @@
         "removeFile": true,
         "exists": true,
         "readDir": true,
-        "scope": ["**"]
+        "scope": [
+          "**"
+        ]
       },
       "path": {
         "all": true
@@ -32,11 +39,17 @@
         "minimize": true,
         "setFullscreen": true,
         "setSize": true,
-        "startDragging": true
+        "startDragging": true,
+        "create": true
       },
       "protocol": {
         "asset": true,
-        "assetScope": ["**"]
+        "assetScope": [
+          "**"
+        ]
+      },
+      "clipboard": {
+        "writeText": true
       }
     },
     "bundle": {

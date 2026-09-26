@@ -1,6 +1,6 @@
 {
-  "latestVersion": "0.1.4",
+  "latestVersion": "0.1.5",
   "minSupportedVersion": "0.1.1",
-  "releaseNotes": "Добавлена возможность скачивать!",
+  "releaseNotes": "Кнопка «Запустить» теперь реально открывает установленный виджет, плюс ссылка для OBS одним кликом!",
   "downloadUrl": "https://github.com/FoxFIreUwU/foxfire-hub/releases/latest"
 }
