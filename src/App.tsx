@@ -4,9 +4,11 @@ import Header from "./components/Header";
 import BottomNav from "./components/BottomNav";
 import WidgetCard from "./components/WidgetCard";
 import WidgetModal from "./components/WidgetModal";
+import DownloadedPanel from "./components/DownloadedPanel";
 import Settings from "./components/Settings";
 import WindowControls from "./components/WindowControls";
 import UpdateBanner from "./components/UpdateBanner";
+import SplashScreen from "./components/SplashScreen";
 import { getScreenshotsFor } from "./data/mockScreenshots";
 import { getDefaultVersion } from "./utils/versions";
 import { checkForAppUpdate } from "./utils/appUpdate";
@@ -24,7 +26,8 @@ import {
   FoxFireProfile,
   AppUpdateInfo,
   LocalState,
-  RegistryStatus
+  RegistryStatus,
+  InstalledWidgetEntry
 } from "./types/widget";
 
 export default function App() {
@@ -45,6 +48,9 @@ export default function App() {
   const [search, setSearch] = useState("");
   const [activeTags, setActiveTags] = useState<string[]>([]);
   const [selectedWidgetId, setSelectedWidgetId] = useState<string | null>(null);
+  // Какой установленный виджет выбран слева во вкладке "Загруженное" —
+  // отдельно от selectedWidgetId, который открывает модалку установки/версий.
+  const [selectedDownloadedId, setSelectedDownloadedId] = useState<string | null>(null);
   const [appUpdate, setAppUpdate] = useState<AppUpdateInfo | null>(null);
   const [updateDismissed, setUpdateDismissed] = useState(false);
 
@@ -163,6 +169,14 @@ export default function App() {
     () => widgets.filter((w) => w.status === "installed" || w.status === "update-available" || w.status === "installing"),
     [widgets]
   );
+
+  const installedEntriesById = useMemo(() => {
+    const map: Record<string, InstalledWidgetEntry> = {};
+    localState.installed.forEach((entry) => {
+      map[entry.id] = entry;
+    });
+    return map;
+  }, [localState.installed]);
 
   function toggleTag(tag: string) {
     setActiveTags((prev) => (prev.includes(tag) ? prev.filter((t) => t !== tag) : [...prev, tag]));
@@ -324,28 +338,66 @@ export default function App() {
   }
 
   const isRegistryLoading = registryStatus === "loading";
+  // Стартовые данные готовы — можно скрывать сплэш и плавно проявлять фон
+  // (слои mesh/grid/картинка, настраиваемые в Настройках) и сам интерфейс.
+  // До этого момента под сплэшем — только нейтральный фон .app-window,
+  // без слоёв темы и без контента, поэтому ничего не "проскакивает" сразу.
+  const contentReady = localStateLoaded && !isRegistryLoading;
+  const contentFadeClass = `transition-opacity duration-700 ease-out ${contentReady ? "opacity-100" : "opacity-0"}`;
 
   return (
     <div className="app-window flex h-screen w-screen flex-col text-warmwhite">
-      <div className="app-mesh-layer" />
-      <div className="app-grid-layer" />
-      <div className="app-bg-layer" />
+      <div className={`app-mesh-layer ${contentFadeClass}`} />
+      <div className={`app-grid-layer ${contentFadeClass}`} />
+      <div className={`app-bg-layer ${contentFadeClass}`} />
       <WindowControls />
+
+      {/* Компактная карточка загрузки по центру (см. SplashScreen.tsx). Лежит
+          поверх контента (z-30), но под кнопками управления окном (z-40/z-50),
+          чтобы окно всегда можно было свернуть или закрыть, даже пока каталог
+          ещё грузится. Сама не имеет фона на весь экран — фон и интерфейс
+          скрыты через contentFadeClass выше/ниже и проявляются только после
+          того, как карточка исчезнет. */}
+      <SplashScreen ready={contentReady} />
 
       {appUpdate && !updateDismissed && (
         <UpdateBanner update={appUpdate} onDismiss={() => setUpdateDismissed(true)} />
       )}
 
-      <div className="relative z-10 flex-1 overflow-y-auto pb-24">
+      {/* Вкладка "Загруженное" получила фиксированный (нескроллящийся) макет —
+          там своя внутренняя прокрутка (список слева, настройки справа), и
+          прокрутка всей страницы поверх этого только мешает и "уезжает".
+          Остальные вкладки, как и раньше, скроллятся целиком. */}
+      <div
+        className={`${
+          activeSection === "downloaded"
+            ? "relative z-10 flex min-h-0 flex-1 flex-col overflow-hidden"
+            : "relative z-10 flex-1 overflow-y-auto pb-24"
+        } ${contentFadeClass}`}
+      >
         <Header
           search={search}
           onSearchChange={setSearch}
           allTags={allTags}
           activeTags={activeTags}
           onToggleTag={toggleTag}
+          showFilters={activeSection !== "downloaded" && activeSection !== "settings"}
+          searchPlaceholder={
+            activeSection === "overview"
+              ? "Поиск по каталогу..."
+              : activeSection === "games"
+                ? "Найти игру..."
+                : "Поиск плагинов..."
+          }
         />
 
-        <main className="mx-auto max-w-5xl px-6 py-6">
+        <main
+          className={
+            activeSection === "downloaded"
+              ? "mx-auto flex min-h-0 w-full max-w-5xl flex-1 flex-col px-6 pt-6 pb-24"
+              : "mx-auto max-w-5xl px-6 py-6"
+          }
+        >
           {actionError && (
             <div className="mb-4 flex items-start gap-2 rounded-xl border border-accent-danger/40 bg-accent-danger/10 p-3 text-xs text-accent-danger">
               <AlertTriangle size={14} className="mt-0.5 flex-shrink-0" />
@@ -401,20 +453,19 @@ export default function App() {
             <>
               {!localStateLoaded ? (
                 <WidgetGridSkeleton />
-              ) : downloadedWidgets.length === 0 ? (
-                <p className="mt-10 text-center text-sm text-muted">
-                  Здесь появятся виджеты, которые ты скачал. Пока список пуст.
-                </p>
               ) : (
-                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-                  {downloadedWidgets.map((widget) => (
-                    <WidgetCard
-                      key={widget.id}
-                      widget={widget}
-                      onOpen={(w) => setSelectedWidgetId(w.id)}
-                      onAction={handleCardAction}
-                    />
-                  ))}
+                <div className="min-h-0 flex-1">
+                  <DownloadedPanel
+                    className="h-full"
+                    widgets={downloadedWidgets}
+                    installedEntries={installedEntriesById}
+                    configByWidget={configByWidget}
+                    selectedId={selectedDownloadedId}
+                    onSelect={setSelectedDownloadedId}
+                    onConfigChange={handleConfigChange}
+                    onLaunch={handleLaunch}
+                    onOpenInfo={(widget) => setSelectedWidgetId(widget.id)}
+                  />
                 </div>
               )}
             </>
@@ -432,14 +483,14 @@ export default function App() {
         </main>
       </div>
 
-      <BottomNav active={activeSection} onChange={setActiveSection} />
+      <div className={contentFadeClass}>
+        <BottomNav active={activeSection} onChange={setActiveSection} />
+      </div>
 
       {selectedWidget && (
         <WidgetModal
           widget={selectedWidget}
           screenshots={getScreenshotsFor(selectedWidget.id, selectedWidget.previewUrl)}
-          configValues={configByWidget[selectedWidget.id] ?? {}}
-          onConfigChange={(key, value) => handleConfigChange(selectedWidget, key, value)}
           onClose={() => setSelectedWidgetId(null)}
           onAction={handleInstall}
           onUninstall={handleUninstall}

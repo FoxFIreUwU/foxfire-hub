@@ -36,6 +36,13 @@ export interface WidgetVersion {
   // Если не указано — используется minAppVersion/maxAppVersion из WidgetManifest.
   minAppVersion?: string;
   maxAppVersion?: string;
+  // Встроенные настройки этой КОНКРЕТНОЙ версии виджета (см. SYSTEM_WIDGET_STYLE.md,
+  // раздел 11). Имя html-файла настроек внутри папки виджета (например "settings.html").
+  // Если не указано здесь — берётся settingsEntry верхнего уровня манифеста (как и с
+  // minAppVersion/maxAppVersion выше); если не указано нигде — Hub показывает
+  // автоформу по configSchema. Так одна версия виджета может уже поддерживать
+  // встроенные настройки, а старая версия того же виджета — ещё нет.
+  settingsEntry?: string;
 }
 
 // Манифест одного виджета — то, что лежит в widget.manifest.json / registry.json на GitHub.
@@ -59,6 +66,10 @@ export interface WidgetManifest {
   // побеждает ограничение конкретной версии.
   minAppVersion?: string; // минимальная версия FoxFire Hub, начиная с которой виджет работает
   maxAppVersion?: string; // максимальная поддерживаемая версия FoxFire Hub (редко нужно)
+  // Значение по умолчанию для settingsEntry всех версий этого виджета, которые сами
+  // его не переопределяют (см. WidgetVersion.settingsEntry и SYSTEM_WIDGET_STYLE.md,
+  // раздел 11). Необязательное поле — без него используется автоформа по configSchema.
+  settingsEntry?: string;
 }
 
 // Виджет вместе с его текущим состоянием в магазине (локальным для пользователя,
@@ -132,6 +143,17 @@ export interface AppUpdateManifest {
   minSupportedVersion?: string; // если указана — версии старше неё считаются "устаревшими" (см. AppUpdateInfo.isMandatory)
   releaseNotes?: string; // короткий текст "что нового", показывается в баннере обновления
   downloadUrl: string; // куда вести пользователя — обычно страница релизов на GitHub
+}
+
+// Формат сообщения window.postMessage, которым встроенная страница настроек
+// виджета (settingsEntry, см. SYSTEM_WIDGET_STYLE.md раздел 11) отправляет
+// свои изменённые настройки обратно в Hub. Отправляется из окна виджета через
+// window.parent.postMessage(...) — можно на каждое изменение поля (живое
+// сохранение) или один раз по кнопке "Сохранить", это решает сам виджет.
+export interface EmbeddedSettingsMessage {
+  type: "foxfirehub:settings-saved";
+  widgetId: string;
+  config: WidgetConfigValues;
 }
 
 // Результат проверки обновлений, который App.tsx кладёт в состояние.

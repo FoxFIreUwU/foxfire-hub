@@ -352,3 +352,13 @@ body {
   animation-iteration-count: 1 !important;
   transition-duration: 0.001ms !important;
 }
+
+/* Бегущая полоска на сплэш-экране при запуске (см. SplashScreen.tsx) */
+@keyframes splash-sweep {
+  0% {
+    transform: translateX(-130%);
+  }
+  100% {
+    transform: translateX(230%);
+  }
+}

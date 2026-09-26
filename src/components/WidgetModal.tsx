@@ -1,7 +1,7 @@
 import { useState } from "react";
-import { X, Star, Download, RefreshCw, Play, ChevronDown, ChevronUp, AlertTriangle, Ban, ImageOff, ShieldAlert, Trash2, Check, Copy } from "lucide-react";
+import { X, Star, Download, RefreshCw, Play, ChevronDown, ChevronUp, AlertTriangle, Ban, ImageOff, ShieldAlert, Trash2, Check, Copy, Sliders } from "lucide-react";
 import { open as openExternalLink } from "@tauri-apps/api/shell";
-import { WidgetVersion, WidgetWithState, WidgetConfigValues } from "../types/widget";
+import { WidgetVersion, WidgetWithState } from "../types/widget";
 import { sortVersionsDesc, getDefaultVersion } from "../utils/versions";
 import { checkWidgetCompatibility } from "../utils/compatibility";
 import { APP_VERSION } from "../appConfig";
@@ -9,8 +9,6 @@ import { APP_VERSION } from "../appConfig";
 interface WidgetModalProps {
   widget: WidgetWithState;
   screenshots: string[];
-  configValues: WidgetConfigValues;
-  onConfigChange: (key: string, value: string | number | boolean) => void;
   onClose: () => void;
   onAction: (widget: WidgetWithState, version: WidgetVersion) => void;
   onUninstall: (widgetId: string, keepConfig: boolean) => void;
@@ -20,8 +18,6 @@ interface WidgetModalProps {
 export default function WidgetModal({
   widget,
   screenshots,
-  configValues,
-  onConfigChange,
   onClose,
   onAction,
   onUninstall,
@@ -46,8 +42,7 @@ export default function WidgetModal({
       setObsLinkError(String(error));
     }
   }
-  const schema = widget.configSchema ?? {};
-  const hasSettings = Object.keys(schema).length > 0;
+  const hasSettings = Object.keys(widget.configSchema ?? {}).length > 0;
   const sortedVersions = sortVersionsDesc(widget.versions);
 
   // Какая версия выбрана прямо сейчас в модалке — по умолчанию самая новая stable.
@@ -241,75 +236,18 @@ export default function WidgetModal({
             )}
           </div>
 
-          {hasSettings && (
-            <div className="mb-4 rounded-xl border border-border bg-black/20 p-4">
-              <h3 className="mb-3 text-sm font-semibold text-warmwhite">Настройки</h3>
-              <div className="flex flex-col gap-3">
-                {Object.entries(schema).map(([key, field]) => {
-                  const value = configValues[key] ?? field.default;
-                  return (
-                    <label key={key} className="flex items-center justify-between gap-3 text-sm text-warmwhite/80">
-                      <span>{field.label}</span>
-
-                      {field.type === "color" && (
-                        <input
-                          type="color"
-                          value={String(value)}
-                          onChange={(e) => onConfigChange(key, e.target.value)}
-                          className="h-8 w-12 cursor-pointer rounded-md border border-border bg-transparent"
-                        />
-                      )}
-
-                      {field.type === "number" && (
-                        <input
-                          type="number"
-                          value={Number(value)}
-                          onChange={(e) => onConfigChange(key, Number(e.target.value))}
-                          className="w-24 rounded-md border border-border bg-card px-2 py-1 text-right text-warmwhite outline-none focus:border-accent-fire/50"
-                        />
-                      )}
-
-                      {field.type === "text" && (
-                        <input
-                          type="text"
-                          value={String(value)}
-                          onChange={(e) => onConfigChange(key, e.target.value)}
-                          className="w-40 rounded-md border border-border bg-card px-2 py-1 text-warmwhite outline-none focus:border-accent-fire/50"
-                        />
-                      )}
-
-                      {field.type === "boolean" && (
-                        <button
-                          onClick={() => onConfigChange(key, !value)}
-                          className={`h-6 w-11 rounded-full transition-colors ${
-                            value ? "bg-accent-fire" : "bg-white/10"
-                          }`}
-                        >
-                          <span
-                            className={`block h-5 w-5 translate-y-0.5 rounded-full bg-white transition-transform ${
-                              value ? "translate-x-5" : "translate-x-0.5"
-                            }`}
-                          />
-                        </button>
-                      )}
-
-                      {field.type === "select" && field.options && (
-                        <select
-                          value={String(value)}
-                          onChange={(e) => onConfigChange(key, e.target.value)}
-                          className="rounded-md border border-border bg-card px-2 py-1 text-warmwhite outline-none focus:border-accent-fire/50"
-                        >
-                          {field.options.map((opt) => (
-                            <option key={opt} value={opt}>
-                              {opt}
-                            </option>
-                          ))}
-                        </select>
-                      )}
-                    </label>
-                  );
-                })}
-              </div>
+          {/* Настройки виджета больше не здесь — здесь только установка/версии/удаление.
+              Сами настройки теперь во вкладке "Загруженное": слева список установленных
+              виджетов, справа — панель настроек выбранного (см. DownloadedPanel.tsx,
+              WidgetSettingsPanel.tsx). Так раздел установки не путается с настройкой уже
+              установленного виджета. */}
+          {hasSettings && widget.status === "installed" && (
+            <div className="mb-4 flex items-start gap-2 rounded-xl border border-accent-fire/30 bg-accent-fire/10 p-3 text-xs text-warmwhite/80">
+              <Sliders size={14} className="mt-0.5 flex-shrink-0 text-accent-fire" />
+              <span>
+                Настройки этого виджета — во вкладке <strong className="text-accent-fire">«Загруженное»</strong>:
+                выбери его там в списке слева.
+              </span>
             </div>
           )}
 

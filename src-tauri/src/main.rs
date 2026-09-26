@@ -9,6 +9,7 @@
 use std::fs;
 use std::io::Cursor;
 use std::path::{Path, PathBuf};
+use std::time::Duration;
 
 // Скачивает zip-архив виджета по ссылке downloadUrl (поле downloadUrl версии
 // в widget.manifest.json) и распаковывает его в папку dest_dir. Если в этой
@@ -75,11 +76,85 @@ fn remove_widget_dir(dir: String) -> Result<(), String> {
     Ok(())
 }
 
+// ===== YouTube: бесплатный поиск текущей трансляции по каналу (для виджета
+// unified-chat, см. widgets/unified-chat в репозитории foxfire-hub-widgets) =====
+//
+// У YouTube есть человеческая ссылка "/@handle/live" (или "/channel/UC.../live"),
+// которая делает редирект прямо на текущий эфир, если он идёт — точно так же
+// работает кнопка "Live" на самом канале. Из браузерного JS внутри виджета этот
+// запрос сделать нельзя (CORS блокирует чтение итогового адреса кросс-доменного
+// редиректа), а вот из Rust — можно, тут никакого CORS нет. Это НЕ официальный
+// Data API и не тратит квоту ключа: просто один обычный HTTP GET, ровно то же
+// самое, что делает браузер, когда человек сам кликает "Live" на канале.
+//
+// Если трансляции нет — YouTube просто не делает редирект на /watch, и функция
+// возвращает Ok(None) (это нормальный, а не ошибочный случай).
+fn normalize_youtube_channel_input(raw: &str) -> Result<String, String> {
+    let input = raw.trim();
+    if input.is_empty() {
+        return Err("Не указан канал YouTube".to_string());
+    }
+
+    // Полная ссылка на канал — вытаскиваем часть пути после youtube.com/.
+    if let Some(pos) = input.find("youtube.com/") {
+        let mut path = input[pos + "youtube.com/".len()..].to_string();
+        if let Some(q) = path.find(['?', '#']) {
+            path.truncate(q);
+        }
+        let path = path.trim_matches('/');
+        let first_segment = path.split('/').next().unwrap_or("").to_string();
+        if !first_segment.is_empty() {
+            return Ok(first_segment);
+        }
+    }
+
+    // Уже похоже на handle (@name) или на ID канала (UC...) — используем как есть.
+    if input.starts_with('@') || input.starts_with("UC") {
+        return Ok(input.to_string());
+    }
+
+    // Иначе считаем, что это просто handle без "@" — добавляем сами, так
+    // пользователю не нужно помнить точный формат.
+    Ok(format!("@{input}"))
+}
+
+#[tauri::command]
+fn resolve_youtube_live_video(channel: String) -> Result<Option<String>, String> {
+    let segment = normalize_youtube_channel_input(&channel)?;
+    let url = format!("https://www.youtube.com/{segment}/live");
+
+    let client = reqwest::blocking::Client::builder()
+        .redirect(reqwest::redirect::Policy::limited(10))
+        .timeout(Duration::from_secs(10))
+        .user_agent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) FoxFireHub/1.0 Safari/537.36")
+        .build()
+        .map_err(|e| format!("Не удалось создать HTTP-клиент: {e}"))?;
+
+    let response = client
+        .get(&url)
+        .send()
+        .map_err(|e| format!("Не удалось обратиться к YouTube: {e}"))?;
+
+    let final_url = response.url().to_string();
+
+    if let Some(idx) = final_url.find("watch?v=") {
+        let rest = &final_url[idx + "watch?v=".len()..];
+        let video_id: String = rest.chars().take_while(|c| *c != '&').collect();
+        if video_id.len() >= 8 {
+            return Ok(Some(video_id));
+        }
+    }
+
+    // Редиректа на /watch не случилось — эфира сейчас нет, это не ошибка.
+    Ok(None)
+}
+
 fn main() {
     tauri::Builder::default()
         .invoke_handler(tauri::generate_handler![
             download_and_extract_widget,
-            remove_widget_dir
+            remove_widget_dir,
+            resolve_youtube_live_video
         ])
         .run(tauri::generate_context!())
         .expect("Ошибка при запуске приложения Tauri");
