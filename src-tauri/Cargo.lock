@@ -934,7 +934,7 @@ dependencies = [
 
 [[package]]
 name = "foxfire-hub"
-version = "0.1.5"
+version = "0.1.6"
 dependencies = [
  "reqwest",
  "serde",

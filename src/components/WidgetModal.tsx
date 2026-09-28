@@ -1,14 +1,14 @@
-import { useState } from "react";
-import { X, Star, Download, RefreshCw, Play, ChevronDown, ChevronUp, AlertTriangle, Ban, ImageOff, ShieldAlert, Trash2, Check, Copy, Sliders } from "lucide-react";
+import { useEffect, useState } from "react";
+import { X, ChevronLeft, ChevronRight, Star, Download, RefreshCw, Play, ChevronDown, ChevronUp, AlertTriangle, Ban, ImageOff, ShieldAlert, Trash2, Check, Copy, Sliders } from "lucide-react";
 import { open as openExternalLink } from "@tauri-apps/api/shell";
 import { WidgetVersion, WidgetWithState } from "../types/widget";
 import { sortVersionsDesc, getDefaultVersion } from "../utils/versions";
 import { checkWidgetCompatibility } from "../utils/compatibility";
 import { APP_VERSION } from "../appConfig";
+import { useWidgetScreenshots } from "../utils/screenshots";
 
 interface WidgetModalProps {
   widget: WidgetWithState;
-  screenshots: string[];
   onClose: () => void;
   onAction: (widget: WidgetWithState, version: WidgetVersion) => void;
   onUninstall: (widgetId: string, keepConfig: boolean) => void;
@@ -17,7 +17,6 @@ interface WidgetModalProps {
 
 export default function WidgetModal({
   widget,
-  screenshots,
   onClose,
   onAction,
   onUninstall,
@@ -48,7 +47,34 @@ export default function WidgetModal({
   // Какая версия выбрана прямо сейчас в модалке — по умолчанию самая новая stable.
   const [selectedVersion, setSelectedVersion] = useState<WidgetVersion>(getDefaultVersion(widget.versions));
   const [descriptionExpanded, setDescriptionExpanded] = useState(false);
-  const [lightboxImage, setLightboxImage] = useState<string | null>(null);
+  // Галерея: список скриншотов подгружается из screenshots/ виджета на GitHub
+  // (см. utils/screenshots.ts). Обложка показывается сразу, остальное дозагружается.
+  const { screenshots, loading: screenshotsLoading } = useWidgetScreenshots(
+    widget.id,
+    widget.previewUrl,
+    widget.screenshots
+  );
+  const [activeShot, setActiveShot] = useState(0);
+  // Индекс открытого в увеличенном просмотре скриншота (null — просмотр закрыт).
+  const [lightboxIndex, setLightboxIndex] = useState<number | null>(null);
+  const safeActive = Math.min(activeShot, Math.max(screenshots.length - 1, 0));
+
+  // В просмотре: ← / → листают, Esc закрывает только просмотр, а не всю модалку.
+  useEffect(() => {
+    if (lightboxIndex === null) return;
+    function handleKey(e: KeyboardEvent) {
+      if (e.key === "Escape") {
+        e.stopPropagation();
+        setLightboxIndex(null);
+      } else if (e.key === "ArrowLeft") {
+        setLightboxIndex((i) => (i === null ? i : (i - 1 + screenshots.length) % screenshots.length));
+      } else if (e.key === "ArrowRight") {
+        setLightboxIndex((i) => (i === null ? i : (i + 1) % screenshots.length));
+      }
+    }
+    window.addEventListener("keydown", handleKey, true);
+    return () => window.removeEventListener("keydown", handleKey, true);
+  }, [lightboxIndex, screenshots.length]);
 
   const alreadyInstalledThisVersion =
     widget.status === "installed" && widget.installedVersion === selectedVersion.version;
@@ -97,37 +123,50 @@ export default function WidgetModal({
             <X size={16} />
           </button>
 
-          {/* Галерея скриншотов (Задание 2). Источник — screenshots/ виджета на GitHub,
-              пока это моковые ссылки, переданные пропом сверху. */}
+          {/* Галерея скриншотов. Большой кадр — выбранный скриншот (клик открывает
+              его на весь экран), полоска снизу — все скриншоты, клик по миниатюре
+              переключает большой кадр. */}
           {screenshots.length > 0 ? (
             <div className="w-full">
               <button
                 type="button"
-                onClick={() => setLightboxImage(screenshots[0])}
+                onClick={() => setLightboxIndex(safeActive)}
                 className="block h-44 w-full overflow-hidden bg-black/30"
               >
-                <img src={screenshots[0]} alt={widget.name} className="h-full w-full object-cover" />
+                <img
+                  key={screenshots[safeActive]}
+                  src={screenshots[safeActive]}
+                  alt={widget.name}
+                  className="h-full w-full object-cover"
+                />
               </button>
 
-              {screenshots.length > 1 && (
+              {(screenshots.length > 1 || screenshotsLoading) && (
                 <div className="flex gap-1.5 overflow-x-auto border-b border-border bg-black/20 p-2">
                   {screenshots.map((src, index) => (
                     <button
                       key={src + index}
                       type="button"
-                      onClick={() => setLightboxImage(src)}
-                      className="h-14 w-20 flex-shrink-0 overflow-hidden rounded-lg border border-border hover:border-accent-fire/60"
+                      onClick={() => setActiveShot(index)}
+                      className={`h-14 w-20 flex-shrink-0 overflow-hidden rounded-lg border transition-colors ${
+                        index === safeActive
+                          ? "border-accent-fire"
+                          : "border-border opacity-70 hover:border-accent-fire/60 hover:opacity-100"
+                      }`}
                     >
                       <img src={src} alt={`${widget.name} — скриншот ${index + 1}`} className="h-full w-full object-cover" />
                     </button>
                   ))}
+                  {screenshotsLoading && (
+                    <div className="h-14 w-20 flex-shrink-0 animate-pulse rounded-lg border border-border bg-white/5" />
+                  )}
                 </div>
               )}
             </div>
           ) : (
             <div className="flex h-32 w-full items-center justify-center gap-2 bg-gradient-to-br from-accent-fire/20 via-accent-purple/10 to-card text-sm text-muted">
               <ImageOff size={18} />
-              Нет скриншотов
+              {screenshotsLoading ? "Загружаем скриншоты..." : "Нет скриншотов"}
             </div>
           )}
 
@@ -246,7 +285,7 @@ export default function WidgetModal({
               <Sliders size={14} className="mt-0.5 flex-shrink-0 text-accent-fire" />
               <span>
                 Настройки этого виджета — во вкладке <strong className="text-accent-fire">«Загруженное»</strong>:
-                выбери его там в списке слева.
+                нажми «Настроить» на его карточке.
               </span>
             </div>
           )}
@@ -335,25 +374,61 @@ export default function WidgetModal({
         </div>
       </div>
 
-      {/* Увеличенный просмотр скриншота */}
-      {lightboxImage && (
+      {/* Увеличенный просмотр скриншота со стрелками */}
+      {lightboxIndex !== null && screenshots[lightboxIndex] && (
         <div
           className="absolute inset-0 z-40 flex items-center justify-center bg-black/90 p-6"
           onClick={(e) => {
             e.stopPropagation();
-            setLightboxImage(null);
+            setLightboxIndex(null);
           }}
         >
           <button
             onClick={(e) => {
               e.stopPropagation();
-              setLightboxImage(null);
+              setLightboxIndex(null);
             }}
             className="absolute right-4 top-4 flex h-9 w-9 items-center justify-center rounded-full bg-black/60 text-white hover:bg-black/80"
           >
             <X size={18} />
           </button>
-          <img src={lightboxImage} alt={widget.name} className="max-h-full max-w-full rounded-xl object-contain" />
+
+          {screenshots.length > 1 && (
+            <>
+              <button
+                type="button"
+                title="Предыдущий"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setLightboxIndex((lightboxIndex - 1 + screenshots.length) % screenshots.length);
+                }}
+                className="absolute left-4 top-1/2 flex h-10 w-10 -translate-y-1/2 items-center justify-center rounded-full bg-black/60 text-white hover:bg-black/80"
+              >
+                <ChevronLeft size={20} />
+              </button>
+              <button
+                type="button"
+                title="Следующий"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setLightboxIndex((lightboxIndex + 1) % screenshots.length);
+                }}
+                className="absolute right-4 top-1/2 flex h-10 w-10 -translate-y-1/2 items-center justify-center rounded-full bg-black/60 text-white hover:bg-black/80"
+              >
+                <ChevronRight size={20} />
+              </button>
+              <span className="absolute bottom-4 left-1/2 -translate-x-1/2 rounded-full bg-black/60 px-3 py-1 text-xs text-white/80">
+                {lightboxIndex + 1} / {screenshots.length}
+              </span>
+            </>
+          )}
+
+          <img
+            src={screenshots[lightboxIndex]}
+            alt={widget.name}
+            onClick={(e) => e.stopPropagation()}
+            className="max-h-full max-w-full rounded-xl object-contain"
+          />
         </div>
       )}
     </div>

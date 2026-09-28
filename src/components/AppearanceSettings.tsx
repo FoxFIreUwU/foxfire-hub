@@ -286,6 +286,14 @@ export default function AppearanceSettings() {
           <Toggle checked={settings.reduceMotion} onChange={(v) => update({ reduceMotion: v })} />
         </label>
 
+        <label className="mt-2 flex items-center justify-between rounded-xl border border-border bg-black/20 px-3 py-2.5">
+          <div>
+            <p className="text-sm text-warmwhite/85">Звук при запуске</p>
+            <p className="text-[11px] text-muted">Короткий звук на заставке при открытии Hub (см. SplashScreen.tsx).</p>
+          </div>
+          <Toggle checked={settings.splashSound} onChange={(v) => update({ splashSound: v })} />
+        </label>
+
         <button
           type="button"
           onClick={resetToDefaults}

@@ -20,6 +20,7 @@ import { exists } from "@tauri-apps/api/fs";
 import { convertFileSrc } from "@tauri-apps/api/tauri";
 import { writeText } from "@tauri-apps/api/clipboard";
 import { ConfigSchema, InstalledWidgetEntry, WidgetConfigValues, WidgetManifest } from "../types/widget";
+import { loadAppearance, themeBridgeSnapshot } from "./appearance";
 
 // Собирает query-строку из настроек виджета: берёт значения по умолчанию из
 // configSchema и поверх накладывает реально сохранённые значения из
@@ -36,6 +37,20 @@ export function buildWidgetQueryString(schema: ConfigSchema | undefined, config:
   });
 
   return params.toString();
+}
+
+// Собирает query-параметр __hubTheme (см. utils/appearance.ts →
+// themeBridgeSnapshot, SYSTEM_WIDGET_STYLE.md раздел 11а) — необязательный
+// снимок текущей темы Hub, который свой index.html/settings.html виджета
+// может прочитать через foxfirehub-bridge.js и подстроить свои цвета под
+// выбранный пользователем акцент. Используется и при запуске окна виджета
+// (launchInstalledWidget), и при открытии встроенной страницы настроек
+// (WidgetSettingsPanel.tsx) — специально НЕ используется в copyWidgetObsLink:
+// ссылка для OBS уходит зрителям/в чужой источник "Браузер", тема личного
+// Hub-профиля стримера там ни при чём.
+export function buildHubThemeQueryParam(): string {
+  const snapshot = themeBridgeSnapshot(loadAppearance());
+  return `__hubTheme=${encodeURIComponent(JSON.stringify(snapshot))}`;
 }
 
 // Метка окна Tauri для каждого виджета — только буквы/цифры/дефис/подчёркивание.
@@ -77,7 +92,8 @@ export async function launchInstalledWidget(
   }
 
   const query = buildWidgetQueryString(manifest.configSchema, config);
-  const widgetUrl = convertFileSrc(indexPath) + (query ? `?${query}` : "");
+  const themeParam = buildHubThemeQueryParam();
+  const widgetUrl = convertFileSrc(indexPath) + "?" + [query, themeParam].filter(Boolean).join("&");
 
   const widgetWindow = new WebviewWindow(label, {
     url: widgetUrl,

@@ -16,6 +16,7 @@ export interface AppearanceSettings {
   backgroundBlur: number; // px, 0–24
   grainEnabled: boolean;
   reduceMotion: boolean;
+  splashSound: boolean; // звук анимации появления при запуске (SplashScreen.tsx)
 }
 
 export const DEFAULT_APPEARANCE: AppearanceSettings = {
@@ -27,7 +28,8 @@ export const DEFAULT_APPEARANCE: AppearanceSettings = {
   backgroundMirrored: false,
   backgroundBlur: 0,
   grainEnabled: true,
-  reduceMotion: false
+  reduceMotion: false,
+  splashSound: true
 };
 
 const STORAGE_KEY = "foxfire-appearance";
@@ -110,6 +112,33 @@ export function applyAppearance(settings: AppearanceSettings) {
 
   root.setAttribute("data-reduce-motion", settings.reduceMotion ? "true" : "false");
   root.setAttribute("data-grain", settings.grainEnabled ? "true" : "false");
+}
+
+// Снимок темы Hub в виде простого plain-object'а (не CSS, просто данные) —
+// кладётся в query-параметр __hubTheme, когда Hub открывает встроенную
+// страницу настроек виджета (settingsEntry) или запускает окно виджета
+// (WidgetSettingsPanel.tsx / widgetLaunch.ts). Полностью опциональный канал:
+// свой settings.html/index.html может прочитать его через foxfirehub-bridge.js
+// (getHubTheme/applyHubTheme) и подхватить акцентный цвет/скругление
+// пользователя вместо жёстко зашитых значений — либо просто проигнорировать,
+// если у виджета уже есть собственная фиксированная палитра. Контракт —
+// SYSTEM_WIDGET_STYLE.md, раздел 11а.
+export interface HubThemeSnapshot {
+  accent: string; // hex, например "#e2820a" — settings.accentColor как есть
+  accentDark: string; // тот же цвет, затемнённый (см. darkenHex) — для hover-состояний
+  radius: string; // CSS-значение скругления, например "16px"
+  textScale: string; // CSS-значение масштаба текста, например "100%"
+  mode: ThemeMode; // "system" | "dark" | "light"
+}
+
+export function themeBridgeSnapshot(settings: AppearanceSettings): HubThemeSnapshot {
+  return {
+    accent: settings.accentColor,
+    accentDark: darkenHex(settings.accentColor),
+    radius: ROUNDING_PX[settings.rounding],
+    textScale: TEXT_SCALE[settings.textSize],
+    mode: settings.theme
+  };
 }
 
 // Несколько готовых фонов, чтобы не тянуть их из интернета — просто CSS-градиенты

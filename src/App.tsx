@@ -1,21 +1,24 @@
 import { useEffect, useMemo, useState } from "react";
+import { emit } from "@tauri-apps/api/event";
 import { AlertTriangle, Loader2 } from "lucide-react";
 import Header from "./components/Header";
 import BottomNav from "./components/BottomNav";
-import WidgetCard from "./components/WidgetCard";
 import WidgetModal from "./components/WidgetModal";
 import DownloadedPanel from "./components/DownloadedPanel";
+import Overview from "./components/Overview";
+import Categories, { CategoryId, CATEGORIES } from "./components/Categories";
+import PluginForgeWindow from "./components/PluginForgeWindow";
 import Settings from "./components/Settings";
 import WindowControls from "./components/WindowControls";
 import UpdateBanner from "./components/UpdateBanner";
 import SplashScreen from "./components/SplashScreen";
-import { getScreenshotsFor } from "./data/mockScreenshots";
 import { getDefaultVersion } from "./utils/versions";
 import { checkForAppUpdate } from "./utils/appUpdate";
 import { checkWidgetCompatibility } from "./utils/compatibility";
 import { loadLocalState, saveLocalState, resolveWidgetInstallDir } from "./utils/localState";
 import { downloadAndExtractWidget, removeWidgetDir } from "./utils/widgetInstall";
 import { launchInstalledWidget, copyWidgetObsLink } from "./utils/widgetLaunch";
+import { LIVE_CONFIG_UPDATE_EVENT } from "./utils/embeddedSettings";
 import { REGISTRY_URL, APP_UPDATE_CHECK_INTERVAL_MS, APP_VERSION } from "./appConfig";
 import {
   NavSection,
@@ -44,13 +47,22 @@ export default function App() {
   const [installingIds, setInstallingIds] = useState<Set<string>>(new Set());
   const [actionError, setActionError] = useState<string | null>(null);
 
-  const [activeSection, setActiveSection] = useState<NavSection>("mods");
+  const [activeSection, setActiveSection] = useState<NavSection>("overview");
+  // Какая категория открыта во вкладке "Категории": null — видны блоки-кнопки
+  // "Плагины"/"Приложения", иначе — страница выбранной категории.
+  const [activeCategory, setActiveCategory] = useState<CategoryId | null>(null);
   const [search, setSearch] = useState("");
   const [activeTags, setActiveTags] = useState<string[]>([]);
   const [selectedWidgetId, setSelectedWidgetId] = useState<string | null>(null);
-  // Какой установленный виджет выбран слева во вкладке "Загруженное" —
-  // отдельно от selectedWidgetId, который открывает модалку установки/версий.
-  const [selectedDownloadedId, setSelectedDownloadedId] = useState<string | null>(null);
+  // Какой установленный виджет сейчас открыт в полноэкранном окне настроек
+  // ("Редактор", бывшая "Кузница FoxFire", см. PluginForgeWindow.tsx) — null, если окно закрыто.
+  // Настройки виджетов больше не втиснуты в узкую панель вкладки "Загруженное":
+  // там теперь только превью и кнопка "Настроить", которая открывает это окно.
+  const [forgeWidgetId, setForgeWidgetId] = useState<string | null>(null);
+  // Открыто ли окно Редактора. Отдельно от forgeWidgetId, чтобы Редактор можно
+  // было открыть кнопкой из нижней панели, даже если ни один виджет не выбран
+  // (или ничего ещё не установлено — тогда доступно «Оформление Hub»).
+  const [editorOpen, setEditorOpen] = useState(false);
   const [appUpdate, setAppUpdate] = useState<AppUpdateInfo | null>(null);
   const [updateDismissed, setUpdateDismissed] = useState(false);
 
@@ -170,6 +182,12 @@ export default function App() {
     [widgets]
   );
 
+  // То же, но с учётом поиска и тегов из шапки — для вкладки "Загруженное".
+  const filteredDownloaded = useMemo(
+    () => filteredWidgets.filter((w) => w.status === "installed" || w.status === "update-available" || w.status === "installing"),
+    [filteredWidgets]
+  );
+
   const installedEntriesById = useMemo(() => {
     const map: Record<string, InstalledWidgetEntry> = {};
     localState.installed.forEach((entry) => {
@@ -177,6 +195,23 @@ export default function App() {
     });
     return map;
   }, [localState.installed]);
+
+  const forgeWidget = useMemo(
+    () => downloadedWidgets.find((w) => w.id === forgeWidgetId) ?? null,
+    [downloadedWidgets, forgeWidgetId]
+  );
+
+  // Повторное нажатие на уже активную вкладку "Категории" возвращает к блокам.
+  // Обзор ссылается сюда же: "Все плагины →" открывает сразу нужную категорию.
+  function handleNavChange(section: NavSection) {
+    if (section === "mods" && activeSection === "mods") setActiveCategory(null);
+    setActiveSection(section);
+  }
+
+  function handleGoToCategory(category: CategoryId) {
+    setActiveCategory(category);
+    setActiveSection("mods");
+  }
 
   function toggleTag(tag: string) {
     setActiveTags((prev) => (prev.includes(tag) ? prev.filter((t) => t !== tag) : [...prev, tag]));
@@ -236,6 +271,7 @@ export default function App() {
         name: widget.name,
         author: widget.author,
         rating: widget.rating,
+        kind: widget.kind,
         tags: widget.tags,
         shortDescription: widget.shortDescription,
         fullDescription: widget.fullDescription,
@@ -294,12 +330,19 @@ export default function App() {
 
   // Изменение настройки виджета сразу пишется в foxfire-state.json — так
   // настройки переживают перезапуск приложения (SYSTEM_RULES.md, раздел 8).
+  // Это единая точка изменения конфига для ОБОИХ способов настроек (автоформа
+  // и встроенная страница settingsEntry — см. WidgetSettingsPanel.tsx), поэтому
+  // именно здесь, а не в каждом источнике по отдельности, рассылается
+  // live-событие уже открытому окну виджета (см. LIVE_CONFIG_UPDATE_EVENT,
+  // раздел 11а SYSTEM_WIDGET_STYLE.md) — виджет сам решает, слушать его или
+  // нет (foxfirehub-bridge.js → onLiveConfigUpdate), ничего обязательного.
   function handleConfigChange(widget: WidgetWithState, key: string, value: string | number | boolean) {
     const manifest: WidgetManifest = localState.configs[widget.id]?.manifest ?? {
       id: widget.id,
       name: widget.name,
       author: widget.author,
       rating: widget.rating,
+      kind: widget.kind,
       tags: widget.tags,
       shortDescription: widget.shortDescription,
       fullDescription: widget.fullDescription,
@@ -315,6 +358,12 @@ export default function App() {
       [widget.id]: { manifest, config: { ...prevConfig, [key]: value } }
     };
     persist({ ...localState, configs: nextConfigs });
+
+    // Best-effort: если ни одно окно сейчас не слушает это событие (виджет
+    // не запущен отдельным окном), emit просто ничего не делает — молча
+    // проглатываем возможную ошибку, чтобы сбой рассылки live-обновления
+    // никогда не мешал самому сохранению настроек выше.
+    emit(LIVE_CONFIG_UPDATE_EVENT, { widgetId: widget.id, key, value }).catch(() => {});
   }
 
   function handleInstallPathChange(path: string | null) {
@@ -364,40 +413,28 @@ export default function App() {
         <UpdateBanner update={appUpdate} onDismiss={() => setUpdateDismissed(true)} />
       )}
 
-      {/* Вкладка "Загруженное" получила фиксированный (нескроллящийся) макет —
-          там своя внутренняя прокрутка (список слева, настройки справа), и
-          прокрутка всей страницы поверх этого только мешает и "уезжает".
-          Остальные вкладки, как и раньше, скроллятся целиком. */}
-      <div
-        className={`${
-          activeSection === "downloaded"
-            ? "relative z-10 flex min-h-0 flex-1 flex-col overflow-hidden"
-            : "relative z-10 flex-1 overflow-y-auto pb-24"
-        } ${contentFadeClass}`}
-      >
+      <div className={`relative z-10 flex-1 overflow-y-auto pb-24 ${contentFadeClass}`}>
         <Header
           search={search}
           onSearchChange={setSearch}
           allTags={allTags}
           activeTags={activeTags}
           onToggleTag={toggleTag}
-          showFilters={activeSection !== "downloaded" && activeSection !== "settings"}
+          showFilters={
+            activeSection === "overview" ||
+            activeSection === "downloaded" ||
+            (activeSection === "mods" && activeCategory !== null)
+          }
           searchPlaceholder={
             activeSection === "overview"
               ? "Поиск по каталогу..."
-              : activeSection === "games"
-                ? "Найти игру..."
-                : "Поиск плагинов..."
+              : activeSection === "downloaded"
+              ? "Поиск среди установленных..."
+              : `Поиск в разделе «${CATEGORIES.find((c) => c.id === activeCategory)?.title ?? "Категории"}»...`
           }
         />
 
-        <main
-          className={
-            activeSection === "downloaded"
-              ? "mx-auto flex min-h-0 w-full max-w-5xl flex-1 flex-col px-6 pt-6 pb-24"
-              : "mx-auto max-w-5xl px-6 py-6"
-          }
-        >
+        <main className="mx-auto max-w-5xl px-6 py-6">
           {actionError && (
             <div className="mb-4 flex items-start gap-2 rounded-xl border border-accent-danger/40 bg-accent-danger/10 p-3 text-xs text-accent-danger">
               <AlertTriangle size={14} className="mt-0.5 flex-shrink-0" />
@@ -408,45 +445,46 @@ export default function App() {
             </div>
           )}
 
+          {(activeSection === "mods" || activeSection === "overview") && registryStatus === "error" && (
+            <div className="mb-4 flex items-start gap-2 rounded-xl border border-accent-warning/40 bg-accent-warning/10 p-3 text-xs text-accent-warning">
+              <AlertTriangle size={14} className="mt-0.5 flex-shrink-0" />
+              Не удалось загрузить каталог виджетов с GitHub (нет интернета, или ещё не настроен
+              REGISTRY_URL в src/appConfig.ts). Показаны только уже скачанные виджеты.
+            </div>
+          )}
+
           {activeSection === "mods" && (
             <>
-              {registryStatus === "error" && (
-                <div className="mb-4 flex items-start gap-2 rounded-xl border border-accent-warning/40 bg-accent-warning/10 p-3 text-xs text-accent-warning">
-                  <AlertTriangle size={14} className="mt-0.5 flex-shrink-0" />
-                  Не удалось загрузить каталог виджетов с GitHub (нет интернета, или ещё не настроен
-                  REGISTRY_URL в src/appConfig.ts). Показаны только уже скачанные виджеты.
-                </div>
-              )}
-
               {isRegistryLoading ? (
                 <WidgetGridSkeleton />
-              ) : filteredWidgets.length === 0 ? (
-                <p className="mt-10 text-center text-sm text-muted">
-                  {registryStatus === "error"
-                    ? "Скачанных виджетов пока нет."
-                    : "Ничего не найдено. Попробуй другой запрос."}
-                </p>
               ) : (
-                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-                  {filteredWidgets.map((widget) => (
-                    <WidgetCard
-                      key={widget.id}
-                      widget={widget}
-                      onOpen={(w) => setSelectedWidgetId(w.id)}
-                      onAction={handleCardAction}
-                    />
-                  ))}
-                </div>
+                <Categories
+                  allWidgets={widgets}
+                  filteredWidgets={filteredWidgets}
+                  isFiltering={search.trim() !== "" || activeTags.length > 0}
+                  category={activeCategory}
+                  onSelectCategory={setActiveCategory}
+                  onOpen={(w) => setSelectedWidgetId(w.id)}
+                  onAction={handleCardAction}
+                />
               )}
             </>
           )}
 
           {activeSection === "overview" && (
-            <p className="mt-10 text-center text-sm text-muted">Раздел "Обзор" пока в разработке.</p>
-          )}
-
-          {activeSection === "games" && (
-            <p className="mt-10 text-center text-sm text-muted">Раздел "Игры" пока в разработке.</p>
+            <>
+              {isRegistryLoading ? (
+                <WidgetGridSkeleton />
+              ) : (
+                <Overview
+                  widgets={filteredWidgets}
+                  isFiltering={search.trim() !== "" || activeTags.length > 0}
+                  onOpen={(w) => setSelectedWidgetId(w.id)}
+                  onAction={handleCardAction}
+                  onGoTo={handleGoToCategory}
+                />
+              )}
+            </>
           )}
 
           {activeSection === "downloaded" && (
@@ -454,19 +492,20 @@ export default function App() {
               {!localStateLoaded ? (
                 <WidgetGridSkeleton />
               ) : (
-                <div className="min-h-0 flex-1">
-                  <DownloadedPanel
-                    className="h-full"
-                    widgets={downloadedWidgets}
-                    installedEntries={installedEntriesById}
-                    configByWidget={configByWidget}
-                    selectedId={selectedDownloadedId}
-                    onSelect={setSelectedDownloadedId}
-                    onConfigChange={handleConfigChange}
-                    onLaunch={handleLaunch}
-                    onOpenInfo={(widget) => setSelectedWidgetId(widget.id)}
-                  />
-                </div>
+                <DownloadedPanel
+                  widgets={filteredDownloaded}
+                  installedEntries={installedEntriesById}
+                  isFiltering={search.trim() !== "" || activeTags.length > 0}
+                  onConfigure={(id) => {
+                    setForgeWidgetId(id);
+                    setEditorOpen(true);
+                  }}
+                  onLaunch={handleLaunch}
+                  onOpenInfo={(widget) => setSelectedWidgetId(widget.id)}
+                  onCopyObsLink={handleCopyObsLink}
+                  onUninstall={handleUninstall}
+                  onBrowseCatalog={() => handleNavChange("mods")}
+                />
               )}
             </>
           )}
@@ -484,13 +523,26 @@ export default function App() {
       </div>
 
       <div className={contentFadeClass}>
-        <BottomNav active={activeSection} onChange={setActiveSection} />
+        <BottomNav active={activeSection} onChange={handleNavChange} onOpenEditor={() => setEditorOpen(true)} />
       </div>
+
+      {editorOpen && (
+        <PluginForgeWindow
+          widgets={downloadedWidgets}
+          activeWidgetId={forgeWidget?.id ?? downloadedWidgets[0]?.id ?? ""}
+          installedEntries={installedEntriesById}
+          configByWidget={configByWidget}
+          onSelectWidget={setForgeWidgetId}
+          onConfigChange={handleConfigChange}
+          onLaunch={handleLaunch}
+          onOpenInfo={(widget) => setSelectedWidgetId(widget.id)}
+          onClose={() => setEditorOpen(false)}
+        />
+      )}
 
       {selectedWidget && (
         <WidgetModal
           widget={selectedWidget}
-          screenshots={getScreenshotsFor(selectedWidget.id, selectedWidget.previewUrl)}
           onClose={() => setSelectedWidgetId(null)}
           onAction={handleInstall}
           onUninstall={handleUninstall}

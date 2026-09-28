@@ -9,13 +9,13 @@
 //    а сохраняет их обратно через window.parent.postMessage(...).
 // 2. Нет settingsEntry — как и раньше, автоформа по configSchema.
 import { useEffect, useMemo, useState } from "react";
-import { AlertTriangle, ExternalLink, Info, Play, RefreshCw, SlidersHorizontal } from "lucide-react";
+import { AlertTriangle, Info, Play, RefreshCw, SlidersHorizontal } from "lucide-react";
 import { join } from "@tauri-apps/api/path";
 import { exists } from "@tauri-apps/api/fs";
 import { convertFileSrc } from "@tauri-apps/api/tauri";
 import { WidgetConfigValues, WidgetWithState, InstalledWidgetEntry } from "../types/widget";
 import { isEmbeddedSettingsMessage, resolveSettingsEntry } from "../utils/embeddedSettings";
-import { buildWidgetQueryString } from "../utils/widgetLaunch";
+import { buildWidgetQueryString, buildHubThemeQueryParam } from "../utils/widgetLaunch";
 import AutoSettingsForm from "./AutoSettingsForm";
 
 interface WidgetSettingsPanelProps {
@@ -42,9 +42,9 @@ export default function WidgetSettingsPanel({
 
   return (
     <div className="flex h-full flex-col">
-      <div className="flex items-start justify-between gap-3 border-b border-border p-4">
+      <div className="flex items-center justify-between gap-3 border-b border-border px-4 py-2.5">
         <div>
-          <h2 className="text-base font-bold text-warmwhite">{widget.name}</h2>
+          <h2 className="text-sm font-bold leading-tight text-warmwhite">{widget.name}</h2>
           <p className="font-mono-ui text-xs text-muted">
             версия {widget.installedVersion}
             {widget.status === "update-available" && (
@@ -73,7 +73,7 @@ export default function WidgetSettingsPanel({
         </div>
       </div>
 
-      <div className="flex-1 overflow-y-auto p-4">
+      <div className={`flex min-h-0 flex-1 flex-col ${settingsEntry ? "p-0" : "overflow-y-auto p-4"}`}>
         {settingsEntry ? (
           <EmbeddedSettingsFrame
             widget={widget}
@@ -83,11 +83,14 @@ export default function WidgetSettingsPanel({
             onConfigChange={onConfigChange}
           />
         ) : Object.keys(widget.configSchema ?? {}).length > 0 ? (
-          <div className="rounded-xl border border-border bg-black/20 p-4">
+          <div>
             <div className="mb-3 flex items-center gap-2 text-sm font-semibold text-warmwhite">
               <SlidersHorizontal size={15} className="text-accent-fire" />
               Настройки
             </div>
+            {/* Сами блоки настроек (сгруппированные по ConfigField.group) уже
+                оформлены внутри AutoSettingsForm — отдельная общая рамка вокруг
+                всей формы больше не нужна, только задваивала бы рамки. */}
             <AutoSettingsForm
               schema={widget.configSchema ?? {}}
               configValues={configValues}
@@ -140,8 +143,17 @@ function EmbeddedSettingsFrame({
           return;
         }
 
+        // __hubTheme — необязательный снимок текущей темы Hub (акцентный
+        // цвет, скругление, масштаб текста), см. utils/appearance.ts →
+        // themeBridgeSnapshot и SYSTEM_WIDGET_STYLE.md, раздел 11а. Своя
+        // страница настроек может прочитать его через foxfirehub-bridge.js
+        // (getHubTheme/applyHubTheme) и подстроиться под цвет, который
+        // пользователь выбрал в разделе "Внешний вид" самого Hub — либо
+        // просто проигнорировать, если у виджета уже есть своя палитра.
         const query = buildWidgetQueryString(widget.configSchema, configValues);
-        const url = convertFileSrc(settingsPath) + (query ? `?${query}&embedded=1` : "?embedded=1");
+        const themeParam = buildHubThemeQueryParam();
+        const url =
+          convertFileSrc(settingsPath) + "?" + [query, "embedded=1", themeParam].filter(Boolean).join("&");
         if (!cancelled) setFrameSrc(url);
       } catch (error) {
         if (!cancelled) setFrameError(`Не удалось открыть настройки: ${String(error)}`);
@@ -172,7 +184,7 @@ function EmbeddedSettingsFrame({
 
   if (frameError) {
     return (
-      <div className="flex items-start gap-2 rounded-xl border border-accent-danger/40 bg-accent-danger/10 p-3 text-xs text-accent-danger">
+      <div className="m-4 flex items-start gap-2 rounded-xl border border-accent-danger/40 bg-accent-danger/10 p-3 text-xs text-accent-danger">
         <AlertTriangle size={14} className="mt-0.5 flex-shrink-0" />
         {frameError}
       </div>
@@ -181,25 +193,26 @@ function EmbeddedSettingsFrame({
 
   if (!frameSrc) {
     return (
-      <div className="flex items-center gap-2 text-xs text-muted">
+      <div className="flex items-center gap-2 p-4 text-xs text-muted">
         <RefreshCw size={13} className="animate-spin" />
         Загрузка настроек виджета…
       </div>
     );
   }
 
+  // Раньше высота была жёстко зашита (h-[520px]) — на маленьких окнах это
+  // обрезало собственную страницу настроек виджета куда сильнее, чем нужно,
+  // хотя панели вокруг (WidgetSettingsPanel/DownloadedPanel/App.tsx) уже
+  // растягиваются на всё доступное место. Теперь iframe сам дотягивается до
+  // низа панели (flex-1), а не занимает произвольную фиксированную высоту.
   return (
-    <div className="overflow-hidden rounded-xl border border-border bg-black/30">
+    <div className="flex min-h-0 flex-1 flex-col overflow-hidden bg-black/30">
       <iframe
         key={frameSrc}
         src={frameSrc}
-        title={`Настройки — ${widget.name}`}
-        className="h-[520px] w-full border-0 bg-warmwhite"
+        title={`Настройки — ${widget.name} (сохраняются автоматически в FoxFire Hub)`}
+        className="w-full flex-1 border-0 bg-warmwhite"
       />
-      <div className="flex items-center gap-1.5 border-t border-border bg-black/40 px-3 py-1.5 text-[11px] text-muted">
-        <ExternalLink size={11} />
-        Встроенная страница настроек виджета — сохраняется автоматически в FoxFire Hub.
-      </div>
     </div>
   );
 }

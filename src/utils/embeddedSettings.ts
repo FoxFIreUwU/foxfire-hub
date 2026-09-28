@@ -8,6 +8,27 @@ import { WidgetManifest } from "../types/widget";
 // Тип сообщения, которое встроенная страница настроек шлёт обратно в Hub.
 export const EMBEDDED_SETTINGS_MESSAGE_TYPE = "foxfirehub:settings-saved" as const;
 
+// Имя Tauri-события, которым Hub рассылает ЖИВЫЕ изменения настроек всем
+// открытым окнам (см. App.tsx → handleConfigChange). Нужно для случая, когда
+// у виджета уже открыто отдельное окно (кнопка "Запустить", widgetLaunch.ts)
+// и пользователь параллельно правит его настройки — без этого события окно
+// подхватило бы новые значения только при следующем перезапуске (query-
+// параметры читаются один раз, при создании окна). Событие глобальное для
+// всего приложения (не привязано к конкретному окну-получателю), поэтому
+// слушатель на стороне виджета обязан сверять payload.widgetId сам —
+// см. foxfirehub-bridge.js → onLiveConfigUpdate, это ровно та же проверка,
+// что уже делает isEmbeddedSettingsMessage ниже для postMessage-канала.
+// Этот канал НЕ заменяет postMessage у settingsEntry (тот остаётся способом
+// СОХРАНИТЬ настройки в Hub) — это обратный, дополнительный канал: Hub →
+// уже запущенное окно виджета, о том, что настройки поменялись где-то ещё.
+export const LIVE_CONFIG_UPDATE_EVENT = "foxfirehub:config-updated" as const;
+
+export interface LiveConfigUpdatePayload {
+  widgetId: string;
+  key: string;
+  value: string | number | boolean;
+}
+
 // Какой html-файл настроек использовать для КОНКРЕТНО УСТАНОВЛЕННОЙ версии
 // виджета. Версия внутри versions[] может переопределить settingsEntry
 // верхнего уровня манифеста — ровно та же логика, что уже используется для

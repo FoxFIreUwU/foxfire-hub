@@ -6,6 +6,13 @@ export interface ConfigField {
   label: string;
   default: string | number | boolean;
   options?: string[]; // используется только когда type === "select"
+  // Необязательная группа для автоформы настроек (AutoSettingsForm) — поля с
+  // одинаковым group рисуются вместе, отдельным заголовком-блоком (например
+  // "Подключение", "Внешний вид"), вместо одного длинного плоского списка.
+  // Поля без group собираются в общий блок "Основное" в начале формы. Это
+  // применяется только к виджетам БЕЗ собственного settingsEntry — у своей
+  // встроенной страницы настроек (settings.html) деление на блоки уже своё.
+  group?: string;
 }
 
 // Схема всех настроек виджета: ключ — имя настройки, значение — её описание
@@ -52,10 +59,23 @@ export interface WidgetManifest {
   name: string;
   author: Author;
   rating: number; // 0–100, показывается зелёным бейджем
+  // Тип утилиты — используется вкладкой "Загруженное", чтобы показывать
+  // установленные плагины и игры отдельными группами (см. DownloadedPanel.tsx
+  // и PluginForgeWindow.tsx). Не указано или "plugin" — обычный виджет/плагин.
+  // "app" — полноценная программа со своим .exe, работает независимо от Hub
+  // (показывается в разделе "Обзор" → "Приложения").
+  // Раздел "Игры" в самом каталоге пока в разработке, поэтому это поле готово
+  // на будущее: как только появятся игры в registry.json, они сами лягут в
+  // свою группу без дополнительных изменений интерфейса.
+  kind?: "plugin" | "app" | "game";
   tags: string[]; // например ["Windows", "OBS", "Chat"]
   shortDescription: string; // короткая строка, всегда видна на карточке и в модалке
   fullDescription: string; // полный текст, скрыт за кнопкой "Показать полностью" в модалке
   previewUrl?: string; // явная обложка карточки; если не указана — берётся первый скриншот
+  // Необязательный явный список ссылок на скриншоты галереи. Если указан —
+  // Hub берёт галерею отсюда и не обращается к GitHub API. Если не указан —
+  // список читается из папки widgets/<id>/screenshots (см. utils/screenshots.ts).
+  screenshots?: string[];
   configSchema?: ConfigSchema;
   versions: WidgetVersion[]; // архив версий, минимум одна запись
   // Совместимость с версией самого FoxFire Hub (см. SYSTEM_WIDGET_STYLE.md, раздел 10).
@@ -83,7 +103,7 @@ export interface WidgetWithState extends WidgetManifest {
 export type WidgetConfigValues = Record<string, string | number | boolean>;
 
 // Категории нижней навигации
-export type NavSection = "mods" | "overview" | "games" | "downloaded" | "settings";
+export type NavSection = "mods" | "overview" | "downloaded" | "settings";
 
 // Статус загрузки каталога виджетов (registry.json) — используется, чтобы
 // показать анимацию загрузки или ошибку вместо старых тестовых виджетов-заглушек.

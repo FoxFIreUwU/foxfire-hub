@@ -15,6 +15,13 @@ interface HeaderProps {
   // место), с плавной анимацией высоты (см. обёртку ниже на CSS
   // grid-template-rows). По умолчанию видны.
   showFilters?: boolean;
+  // Сжатый вариант шапки — сейчас используется только вкладкой "Загруженное":
+  // там и так тесно (список виджетов слева + встроенная страница настроек
+  // справа), а название приложения и бейдж "Онлайн-каталог" там не несут
+  // пользы, только отнимают вертикальное место у панели настроек. В сжатом
+  // виде шапка ниже примерно вдвое, но остаётся достаточно высокой, чтобы не
+  // наезжать на кнопки управления окном (WindowControls) сверху справа.
+  compact?: boolean;
 }
 
 export default function Header({
@@ -24,34 +31,51 @@ export default function Header({
   activeTags,
   onToggleTag,
   searchPlaceholder = "Поиск виджетов...",
-  showFilters = true
+  showFilters = true,
+  compact = false
 }: HeaderProps) {
   return (
-    <header className="sticky top-0 z-10 border-b border-border bg-appbg/85 px-6 pb-4 pt-9 backdrop-blur-xl">
+    <header
+      className={`sticky top-0 z-10 border-b border-border bg-appbg/85 px-6 pt-9 backdrop-blur-xl transition-[padding] duration-200 ${
+        compact ? "pb-2" : "pb-4"
+      }`}
+    >
       {/* Фирменная янтарная полоса под шапкой — как в Telegram Mini App FoxFire */}
       <div className="absolute inset-x-0 top-0 h-[2px] bg-gradient-to-r from-transparent via-accent-fire to-transparent opacity-70" />
 
       <div className="mx-auto max-w-5xl">
-        <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+        <div className={`flex flex-wrap items-center justify-between gap-3 ${compact ? "mb-0" : "mb-4"}`}>
           <div className="flex items-center gap-2.5">
-            <span className="flex h-8 w-8 items-center justify-center rounded-lg border border-accent-fire/30 bg-accent-fire/10 text-accent-fire shadow-glow-sm">
-              <Flame size={16} />
+            <span
+              className={`flex items-center justify-center rounded-lg border border-accent-fire/30 bg-accent-fire/10 text-accent-fire shadow-glow-sm ${
+                compact ? "h-6 w-6" : "h-8 w-8"
+              }`}
+            >
+              <Flame size={compact ? 13 : 16} />
             </span>
-            <h1 className="scanline-text text-2xl font-extrabold tracking-tight text-warmwhite">FoxFire Hub</h1>
+            <h1
+              className={`scanline-text font-extrabold tracking-tight text-warmwhite ${
+                compact ? "text-sm" : "text-2xl"
+              }`}
+            >
+              FoxFire Hub
+            </h1>
             {/* Бейдж стадии разработки — виден пока приложение в альфе, чтобы никто не принял
                 тестовую сборку за финальный релиз. Уберётся сам, если сменить APP_STAGE_LABEL
-                на пустую строку в src/appConfig.ts. */}
-            {APP_STAGE_LABEL && (
+                на пустую строку в src/appConfig.ts. Прячем в сжатом виде — там и так мало места. */}
+            {APP_STAGE_LABEL && !compact && (
               <span className="rounded-md border border-accent-warning/40 bg-accent-warning/10 px-1.5 py-0.5 text-[10px] font-bold tracking-wider text-accent-warning">
                 {APP_STAGE_LABEL}
               </span>
             )}
           </div>
 
-          <span className="pill border-border bg-card2/70 text-muted">
-            <span className="pill-dot bg-accent-green shadow-[0_0_8px_rgba(34,197,94,0.7)]" />
-            Онлайн-каталог виджетов
-          </span>
+          {!compact && (
+            <span className="pill border-border bg-card2/70 text-muted">
+              <span className="pill-dot bg-accent-green shadow-[0_0_8px_rgba(34,197,94,0.7)]" />
+              Онлайн-каталог виджетов
+            </span>
+          )}
         </div>
 
         {/* Обёртка на CSS grid: анимируем grid-template-rows между 0fr и 1fr —
