@@ -1,6 +1,6 @@
 [package]
 name = "foxfire-hub"
-version = "0.1.6"
+version = "0.1.7"
 description = "FoxFire Hub — маркет помогалок и виджетов для стримеров"
 authors = ["you"]
 edition = "2021"
