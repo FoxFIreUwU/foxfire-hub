@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { emit } from "@tauri-apps/api/event";
 import { AlertTriangle, Loader2 } from "lucide-react";
 import Header from "./components/Header";
@@ -17,8 +17,9 @@ import { checkForAppUpdate } from "./utils/appUpdate";
 import { checkWidgetCompatibility } from "./utils/compatibility";
 import { loadLocalState, saveLocalState, resolveWidgetInstallDir } from "./utils/localState";
 import { downloadAndExtractWidget, removeWidgetDir } from "./utils/widgetInstall";
-import { launchInstalledWidget, copyWidgetObsLink } from "./utils/widgetLaunch";
+import { launchInstalledWidget, copyWidgetObsLink, registerWidgetDir } from "./utils/widgetLaunch";
 import { LIVE_CONFIG_UPDATE_EVENT } from "./utils/embeddedSettings";
+import { invalidateWidgetConfigFile, syncWidgetConfigFile } from "./utils/widgetConfigFile";
 import { REGISTRY_URL, APP_UPDATE_CHECK_INTERVAL_MS, APP_VERSION } from "./appConfig";
 import {
   NavSection,
@@ -43,6 +44,11 @@ export default function App() {
   // Загружается один раз при старте из foxfire-state.json.
   const [localState, setLocalState] = useState<LocalState>({ installPath: null, installed: [], configs: {} });
   const [localStateLoaded, setLocalStateLoaded] = useState(false);
+  // Всегда актуальная копия localState. Нужна, потому что встроенная страница
+  // настроек присылает ВЕСЬ конфиг разом, и handleConfigChange вызывается
+  // десятки раз подряд в одном тике — по замыканию каждый вызов видел старое
+  // состояние и затирал предыдущие поля (сохранялось только последнее).
+  const localStateRef = useRef<LocalState>({ installPath: null, installed: [], configs: {} });
   // Виджеты, которые прямо сейчас скачиваются (кнопка "Установка...").
   const [installingIds, setInstallingIds] = useState<Set<string>>(new Set());
   const [actionError, setActionError] = useState<string | null>(null);
@@ -65,9 +71,12 @@ export default function App() {
   const [editorOpen, setEditorOpen] = useState(false);
   const [appUpdate, setAppUpdate] = useState<AppUpdateInfo | null>(null);
   const [updateDismissed, setUpdateDismissed] = useState(false);
+  // Заставка начала исчезать — можно проявлять интерфейс и фон.
+  const [splashLeaving, setSplashLeaving] = useState(false);
 
   useEffect(() => {
     loadLocalState().then((state) => {
+      localStateRef.current = state;
       setLocalState(state);
       setLocalStateLoaded(true);
     });
@@ -110,9 +119,22 @@ export default function App() {
   }, []);
 
   function persist(next: LocalState) {
+    localStateRef.current = next;
     setLocalState(next);
     saveLocalState(next);
   }
+
+  // Файл настроек каждого установленного виджета (config.js в его папке)
+  // всегда соответствует сохранённым настройкам — см. utils/widgetConfigFile.ts.
+  useEffect(() => {
+    if (!localStateLoaded) return;
+    localState.installed.forEach((entry) => {
+      const saved = localState.configs[entry.id];
+      syncWidgetConfigFile(entry.id, entry.installDir, saved?.manifest?.configSchema, saved?.config ?? {});
+      // Папка виджета нужна локальному серверу (ссылка для OBS) сразу после старта Hub.
+      registerWidgetDir(entry);
+    });
+  }, [localState, localStateLoaded]);
 
   // Собирает единый список виджетов для интерфейса: манифесты из registry.json
   // плюс сверху накладывается реальный статус установки из localState. Виджеты,
@@ -263,8 +285,9 @@ export default function App() {
     setInstallingIds((prev) => new Set(prev).add(widget.id));
 
     try {
-      const dir = await resolveWidgetInstallDir(localState.installPath, widget.id);
+      const dir = await resolveWidgetInstallDir(localStateRef.current.installPath, widget.id);
       await downloadAndExtractWidget(version.downloadUrl, dir);
+      invalidateWidgetConfigFile(widget.id);
 
       const manifest: WidgetManifest = {
         id: widget.id,
@@ -282,13 +305,14 @@ export default function App() {
         maxAppVersion: widget.maxAppVersion
       };
 
-      const nextInstalled = localState.installed.filter((e) => e.id !== widget.id);
+      const cur = localStateRef.current;
+      const nextInstalled = cur.installed.filter((e) => e.id !== widget.id);
       nextInstalled.push({ id: widget.id, installedVersion: version.version, installDir: dir });
 
-      const existingConfig = localState.configs[widget.id]?.config ?? {};
-      const nextConfigs = { ...localState.configs, [widget.id]: { manifest, config: existingConfig } };
+      const existingConfig = cur.configs[widget.id]?.config ?? {};
+      const nextConfigs = { ...cur.configs, [widget.id]: { manifest, config: existingConfig } };
 
-      persist({ ...localState, installed: nextInstalled, configs: nextConfigs });
+      persist({ ...cur, installed: nextInstalled, configs: nextConfigs });
     } catch (error) {
       setActionError(`Не удалось установить «${widget.name}»: ${String(error)}`);
     } finally {
@@ -320,11 +344,12 @@ export default function App() {
       return;
     }
 
-    const nextInstalled = localState.installed.filter((e) => e.id !== widgetId);
-    const nextConfigs = { ...localState.configs };
+    const cur = localStateRef.current;
+    const nextInstalled = cur.installed.filter((e) => e.id !== widgetId);
+    const nextConfigs = { ...cur.configs };
     if (!keepConfig) delete nextConfigs[widgetId];
 
-    persist({ ...localState, installed: nextInstalled, configs: nextConfigs });
+    persist({ ...cur, installed: nextInstalled, configs: nextConfigs });
     if (selectedWidgetId === widgetId) setSelectedWidgetId(null);
   }
 
@@ -337,7 +362,8 @@ export default function App() {
   // раздел 11а SYSTEM_WIDGET_STYLE.md) — виджет сам решает, слушать его или
   // нет (foxfirehub-bridge.js → onLiveConfigUpdate), ничего обязательного.
   function handleConfigChange(widget: WidgetWithState, key: string, value: string | number | boolean) {
-    const manifest: WidgetManifest = localState.configs[widget.id]?.manifest ?? {
+    const cur = localStateRef.current;
+    const manifest: WidgetManifest = cur.configs[widget.id]?.manifest ?? {
       id: widget.id,
       name: widget.name,
       author: widget.author,
@@ -352,12 +378,12 @@ export default function App() {
       minAppVersion: widget.minAppVersion,
       maxAppVersion: widget.maxAppVersion
     };
-    const prevConfig = localState.configs[widget.id]?.config ?? {};
+    const prevConfig = cur.configs[widget.id]?.config ?? {};
     const nextConfigs = {
-      ...localState.configs,
+      ...cur.configs,
       [widget.id]: { manifest, config: { ...prevConfig, [key]: value } }
     };
-    persist({ ...localState, configs: nextConfigs });
+    persist({ ...cur, configs: nextConfigs });
 
     // Best-effort: если ни одно окно сейчас не слушает это событие (виджет
     // не запущен отдельным окном), emit просто ничего не делает — молча
@@ -367,7 +393,7 @@ export default function App() {
   }
 
   function handleInstallPathChange(path: string | null) {
-    persist({ ...localState, installPath: path });
+    persist({ ...localStateRef.current, installPath: path });
   }
 
   // Применяет импортированный профиль (Задание 5): для каждого виджета из файла
@@ -391,7 +417,11 @@ export default function App() {
   // (слои mesh/grid/картинка, настраиваемые в Настройках) и сам интерфейс.
   // До этого момента под сплэшем — только нейтральный фон .app-window,
   // без слоёв темы и без контента, поэтому ничего не "проскакивает" сразу.
-  const contentReady = localStateLoaded && !isRegistryLoading;
+  const dataReady = localStateLoaded && !isRegistryLoading;
+  // Интерфейс проявляется только когда заставка начала исчезать (см. onExit в
+  // SplashScreen.tsx): заставка теперь держится, пока не доиграет звук, и
+  // интерфейс не должен проступать из-под ещё висящей карточки.
+  const contentReady = dataReady && splashLeaving;
   const contentFadeClass = `transition-opacity duration-700 ease-out ${contentReady ? "opacity-100" : "opacity-0"}`;
 
   return (
@@ -407,7 +437,7 @@ export default function App() {
           ещё грузится. Сама не имеет фона на весь экран — фон и интерфейс
           скрыты через contentFadeClass выше/ниже и проявляются только после
           того, как карточка исчезнет. */}
-      <SplashScreen ready={contentReady} />
+      <SplashScreen ready={dataReady} onExit={() => setSplashLeaving(true)} />
 
       {appUpdate && !updateDismissed && (
         <UpdateBanner update={appUpdate} onDismiss={() => setUpdateDismissed(true)} />

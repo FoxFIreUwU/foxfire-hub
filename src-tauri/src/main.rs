@@ -6,6 +6,9 @@
 // src/utils/localState.ts (см. также SYSTEM_RULES.md, раздел 8).
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+mod local_server;
+mod youtube_chat;
+
 use std::fs;
 use std::io::Cursor;
 use std::path::{Path, PathBuf};
@@ -151,10 +154,21 @@ fn resolve_youtube_live_video(channel: String) -> Result<Option<String>, String>
 
 fn main() {
     tauri::Builder::default()
+        .setup(|_app| {
+            // Локальный сервер для OBS/браузера: http://127.0.0.1:47821…47830/w/<id-виджета>/index.html
+            match local_server::start() {
+                Some(port) => println!("Hub: локальный сервер на 127.0.0.1:{port}"),
+                None => eprintln!("Hub: не удалось занять порт 47821–47830"),
+            }
+            Ok(())
+        })
         .invoke_handler(tauri::generate_handler![
             download_and_extract_widget,
             remove_widget_dir,
-            resolve_youtube_live_video
+            resolve_youtube_live_video,
+            youtube_chat::yt_chat_poll,
+            local_server::local_server_port,
+            local_server::register_widget_dir
         ])
         .run(tauri::generate_context!())
         .expect("Ошибка при запуске приложения Tauri");

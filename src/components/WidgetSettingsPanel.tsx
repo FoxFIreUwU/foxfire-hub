@@ -15,7 +15,7 @@ import { exists } from "@tauri-apps/api/fs";
 import { convertFileSrc } from "@tauri-apps/api/tauri";
 import { WidgetConfigValues, WidgetWithState, InstalledWidgetEntry } from "../types/widget";
 import { isEmbeddedSettingsMessage, resolveSettingsEntry } from "../utils/embeddedSettings";
-import { buildWidgetQueryString, buildHubThemeQueryParam } from "../utils/widgetLaunch";
+import { buildWidgetQueryString, buildHubThemeQueryParam, getWidgetObsUrl } from "../utils/widgetLaunch";
 import AutoSettingsForm from "./AutoSettingsForm";
 
 interface WidgetSettingsPanelProps {
@@ -152,8 +152,17 @@ function EmbeddedSettingsFrame({
         // просто проигнорировать, если у виджета уже есть своя палитра.
         const query = buildWidgetQueryString(widget.configSchema, configValues);
         const themeParam = buildHubThemeQueryParam();
+        // Настоящая file:// ссылка на index.html для кнопки "Скопировать ссылку
+        // для OBS" в странице настроек: из самого iframe её не вычислить —
+        // адрес там asset.localhost, который работает только внутри Hub.
+        let obsParam = "";
+        try {
+          obsParam = `__obsUrl=${encodeURIComponent(await getWidgetObsUrl(entry))}`;
+        } catch {
+          /* index.html не найден — страница настроек сама покажет запасной вариант */
+        }
         const url =
-          convertFileSrc(settingsPath) + "?" + [query, "embedded=1", themeParam].filter(Boolean).join("&");
+          convertFileSrc(settingsPath) + "?" + [query, "embedded=1", themeParam, obsParam, `_=${Date.now()}`].filter(Boolean).join("&"); // _= — чтобы WebView2 не подставлял старую копию settings.html из кэша
         if (!cancelled) setFrameSrc(url);
       } catch (error) {
         if (!cancelled) setFrameError(`Не удалось открыть настройки: ${String(error)}`);

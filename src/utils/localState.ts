@@ -38,13 +38,31 @@ export async function loadLocalState(): Promise<LocalState> {
   }
 }
 
+// Записи идут строго по очереди и склеиваются: если пока пишется одна версия
+// состояния пришла новая — пишется только самая свежая. Раньше десятки
+// параллельных writeTextFile (по одному на поле настроек) могли завершиться
+// в произвольном порядке, и на диске оставалась НЕ последняя версия.
+let latestToSave: LocalState | null = null;
+let saveRunning = false;
+
 export async function saveLocalState(state: LocalState): Promise<void> {
+  latestToSave = state;
+  if (saveRunning) return;
+  saveRunning = true;
   try {
-    const dir = await appDataDir();
-    await createDir(dir, { recursive: true });
-    await writeTextFile(await stateFilePath(), JSON.stringify(state, null, 2));
-  } catch {
-    // Не в Tauri (браузерный dev-режим) — сохранять некуда, и это нормально.
+    while (latestToSave) {
+      const next = latestToSave;
+      latestToSave = null;
+      try {
+        const dir = await appDataDir();
+        await createDir(dir, { recursive: true });
+        await writeTextFile(await stateFilePath(), JSON.stringify(next, null, 2));
+      } catch {
+        // Не в Tauri (браузерный dev-режим) — сохранять некуда, и это нормально.
+      }
+    }
+  } finally {
+    saveRunning = false;
   }
 }
 
